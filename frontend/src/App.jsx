@@ -4,20 +4,10 @@ import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
+import KnowledgeBase from './pages/KnowledgeBase';
 import Navbar from './components/Navbar';
-
-function DashboardPage() {
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
-      <Navbar />
-      <div className="max-w-6xl mx-auto p-8">
-        <h1 className="text-2xl font-bold">Swarm Execution Workspace</h1>
-        <p className="text-xs text-slate-400 mt-1">Generate multi-agent campaigns and marketing copy.</p>
-      </div>
-    </div>
-  );
-}
 
 export default function App() {
   return (
@@ -31,7 +21,7 @@ export default function App() {
             path="/dashboard"
             element={
               <ProtectedRoute allowedRoles={['leader', 'admin', 'marketer', 'backend_dev', 'frontend_dev', 'user']}>
-                <DashboardPage />
+                <Dashboard />
               </ProtectedRoute>
             }
           />
@@ -40,6 +30,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['leader', 'admin']}>
                 <AdminPanel />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/knowledge"
+            element={
+              <ProtectedRoute allowedRoles={['leader', 'admin', 'marketer', 'backend_dev', 'frontend_dev', 'user']}>
+                <KnowledgeBase />
               </ProtectedRoute>
             }
           />
