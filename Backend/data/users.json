@@ -1,0 +1,26 @@
+{
+  "mann@company.com": {
+    "id": "902dd16e-b19b-44b6-a8bb-0658ba1d5843",
+    "name": "Mann Patel",
+    "email": "mann@company.com",
+    "password_hash": "$2b$12$aO.KK51QLAZsVX4NwmlnxOVuF/5NioqGpa/np.I7jnfETCmnPpxbS",
+    "role": "leader",
+    "created_at": "2025-01-01T00:00:00Z"
+  },
+  "admin@company.com": {
+    "id": "a6eaf304-c394-4a61-8e61-54bcab043fd7",
+    "name": "System Admin",
+    "email": "admin@company.com",
+    "password_hash": "$2b$12$jze9di/4kuizzZqcmMPiLuM2IgIAtZwDO2J.b0eIH1lZ7PVioAWQ6",
+    "role": "admin",
+    "created_at": "2025-01-01T00:00:00Z"
+  },
+  "marketer@company.com": {
+    "id": "7c842dc7-fc80-4f45-8ce2-c81dc12a6dfc",
+    "name": "Sarah Jenkins",
+    "email": "marketer@company.com",
+    "password_hash": "$2b$12$DifceodjWrh1JdW3D6XavOmoQuhoqG4My1/6eQ4UVaubg6CPx5bcK",
+    "role": "marketer",
+    "created_at": "2025-01-01T00:00:00Z"
+  }
+}

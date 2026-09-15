@@ -1,0 +1,50 @@
+[
+  {
+    "dispatch_id": "disp_0e43dd7c6f",
+    "content_snippet": "\ud83d\ude80 Announcing AgenticMarketer: Autonomous Multi-Agent Marketing Intelligence.",
+    "platforms": [
+      "linkedin",
+      "x",
+      "threads",
+      "webhook"
+    ],
+    "media_url": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe",
+    "scheduled": false,
+    "scheduled_time": null,
+    "created_at": "2026-09-10T17:10:19.785278+00:00",
+    "receipts": [
+      {
+        "platform": "Linkedin",
+        "status": "Broadcasted",
+        "transaction_id": "tx_lin_38cf6be5",
+        "character_count": 76,
+        "published_at": "2026-09-10T17:10:19.785278+00:00",
+        "preview": "\ud83d\ude80 Announcing AgenticMarketer: Autonomous Multi-Agent Marketing Intelligence...."
+      },
+      {
+        "platform": "X",
+        "status": "Broadcasted",
+        "transaction_id": "tx_x_4fb0366b",
+        "character_count": 76,
+        "published_at": "2026-09-10T17:10:19.785278+00:00",
+        "preview": "\ud83d\ude80 Announcing AgenticMarketer: Autonomous Multi-Agent Marketing Intelligence...."
+      },
+      {
+        "platform": "Threads",
+        "status": "Broadcasted",
+        "transaction_id": "tx_thr_eb6a8cb2",
+        "character_count": 76,
+        "published_at": "2026-09-10T17:10:19.785278+00:00",
+        "preview": "\ud83d\ude80 Announcing AgenticMarketer: Autonomous Multi-Agent Marketing Intelligence...."
+      },
+      {
+        "platform": "Webhook",
+        "status": "Webhook delivered",
+        "transaction_id": "tx_web_9904110b",
+        "character_count": 76,
+        "published_at": "2026-09-10T17:10:19.785278+00:00",
+        "preview": "\ud83d\ude80 Announcing AgenticMarketer: Autonomous Multi-Agent Marketing Intelligence...."
+      }
+    ]
+  }
+]
