@@ -57,12 +57,13 @@ async def upload_document(file: UploadFile = File(...)):
     # Save to disk
     uploads_dir = Path(settings.UPLOAD_DIRECTORY)
     uploads_dir.mkdir(parents=True, exist_ok=True)
-    target_path = uploads_dir / f"{Path(filename).stem}_{Path(filename).suffix}"
+    stem = Path(filename).stem
+    target_path = uploads_dir / f"{stem}{ext}"
 
     # Handle duplicates by appending counter if needed
     counter = 1
     while target_path.exists():
-        target_path = uploads_dir / f"{Path(filename).stem}_{counter}{Path(filename).suffix}"
+        target_path = uploads_dir / f"{stem}_{counter}{ext}"
         counter += 1
 
     try:

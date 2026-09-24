@@ -231,6 +231,7 @@ build/
 out/
 
 # Environment variables
+.env
 backend/.env
 *.env
 .env*.local

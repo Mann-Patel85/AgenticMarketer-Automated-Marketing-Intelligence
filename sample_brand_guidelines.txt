@@ -1,0 +1,25 @@
+# FlowScale AI — Official Brand & Product Guidelines (2026)
+
+## 1. Company Mission & Overview
+FlowScale AI is the next-generation autonomous cloud infrastructure platform. We empower engineering organizations to eliminate cloud waste by up to 68% while guaranteeing 99.999% application uptime. FlowScale automatically predicts traffic spikes, right-sizes Kubernetes clusters in real time, and negotiates spot instances without human intervention.
+
+## 2. Core Value Propositions
+- Zero-Touch Cloud Scaling: Autonomous pod horizontal and vertical auto-scaling driven by predictive machine learning.
+- Guaranteed 60%+ Cost Reduction: We cut AWS, GCP, and Azure compute spending without degrading latency.
+- Sub-second Failover: Instantly replaces preempted spot instances with zero dropped user requests.
+- Enterprise Security: SOC2 Type II certified, GDPR compliant, and runs natively inside customer VPCs with zero data exfiltration.
+
+## 3. Brand Voice & Editorial Tone
+- Tone: Authoritative, engineering-first, high-conviction, and crisp.
+- Style: Focus on hard data, architectural benchmarks, and direct developer empathy. Avoid corporate buzzwords like "synergy" or "game-changer".
+- Vocabulary: Use terms like "predictive scaling", "deterministic latency", "P99 stabilization", and "cloud unit economics".
+- Visual Aesthetics: Dark cyberpunk minimalism, electric cyan and deep obsidian color palette, clean vector topology diagrams, and telemetry HUD graphics.
+
+## 4. Competitive Positioning
+- Unlike legacy auto-scalers (such as standard Kubernetes HPA) which react AFTER CPU spikes cause lag, FlowScale uses predictive reinforcement learning to pre-scale infrastructure 90 seconds before traffic hits.
+- Pricing model: 100% success-based — customers only pay 15% of verified cloud savings.
+
+## 5. Disallowed Claims & Compliance Rules
+- NEVER guarantee 100% cost reduction.
+- NEVER claim that traditional DevOps engineers will be replaced; FlowScale augments teams by automating repetitive toil.
+- Always include the asterisk on uptime benchmarks: "*Based on benchmark tests across 450+ production clusters".

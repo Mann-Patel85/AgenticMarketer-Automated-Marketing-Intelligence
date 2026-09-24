@@ -9,15 +9,17 @@ Microservices Architecture:
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 from backend.app.core.config import get_settings
 from backend.app.routers.auth import router as auth_router
 from backend.app.routers.rag import router as rag_router
 from backend.app.routers.swarm import router as swarm_router
 from backend.app.routers.publish import router as publish_router
+from backend.app.routers.workspace import router as workspace_router
+from backend.app.routers.seo_auditor import router as seo_auditor_router
 from backend.app.rag.vector_store import rag_store
 
 
@@ -56,6 +58,8 @@ app.include_router(auth_router)
 app.include_router(rag_router)
 app.include_router(swarm_router)
 app.include_router(publish_router)
+app.include_router(workspace_router)
+app.include_router(seo_auditor_router)
 
 
 # ── Favicon & Root Endpoints ─────────────────────────────────────────
@@ -64,6 +68,16 @@ async def favicon():
     """Silence automatic browser favicon requests."""
     return Response(status_code=204)
 
+
+@app.get("/api/swarm/images/{filename}", tags=["Swarm"])
+async def serve_campaign_image(filename: str):
+    """Serves AI-generated campaign images produced by Gemini 2.5 Flash (Nano Banana)."""
+    images_dir = (Path(settings.UPLOAD_DIRECTORY) / "images").resolve()
+    safe_filename = Path(filename).name
+    file_path = (images_dir / safe_filename).resolve()
+    if not file_path.exists() or not file_path.is_file() or not file_path.is_relative_to(images_dir):
+        raise HTTPException(status_code=404, detail=f"Image '{filename}' not found.")
+    return FileResponse(str(file_path), media_type="image/png")
 
 @app.get("/", tags=["System"])
 async def root():
@@ -88,20 +102,29 @@ async def root():
 async def health_check():
     """Real-time microservice health check."""
     docs = rag_store.list_documents()
+    images_dir = Path(settings.UPLOAD_DIRECTORY) / "images"
+    images_count = len(list(images_dir.glob("*.png"))) if images_dir.exists() else 0
     return {
         "status": "healthy",
         "version": settings.APP_VERSION,
-        "active_agents": 5,
+        "active_agents": 6,
         "agents": [
             "Document Ingestion Agent",
             "Market Research Agent",
             "Copywriter & Visual Agent",
+            f"Image Generation Agent ({settings.effective_image_model})",
             "SEO & Analytics Agent",
             "Social Publisher Agent",
         ],
         "rag_status": "operational",
         "indexed_documents_count": len(docs),
         "gemini_api_configured": bool(settings.GEMINI_API_KEY),
+        "gemini_model": settings.effective_text_model,
+        "image_model": settings.effective_image_model,
+        "huggingface_model": settings.HUGGINGFACE_IMAGE_MODEL,
+        "huggingface_configured": bool(settings.effective_hf_token),
+        "image_generation_enabled": True,
+        "generated_images_count": images_count,
     }
 
 

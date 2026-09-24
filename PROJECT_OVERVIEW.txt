@@ -1,0 +1,510 @@
+================================================================================
+                    AGENTICMARKETER: PROJECT OVERVIEW & MANUAL
+         Autonomous Multi-Agent Marketing Intelligence & Omnichannel Publisher
+================================================================================
+
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1. EXECUTIVE SUMMARY & WHAT IS THIS PROJECT?
+2. PURPOSE & REAL-WORLD PROBLEM IT SOLVES
+3. HOW IT WORKS (END-TO-END WORKFLOW)
+4. THE 6 AUTONOMOUS AI AGENTS EXPLAINED
+5. 12 OMNICHANNEL OUTPUT PLATFORMS & MASTER COPY
+6. MULTIMODAL VISUAL ENGINE (HUGGING FACE FLUX.1 & GEMINI)
+7. SYSTEM ARCHITECTURE & DESIGN
+8. VECTOR RETRIEVAL (RAG) & KNOWLEDGE BASE ENGINE
+9. FRONTEND USER INTERFACE & PAGES (NEXT.JS + TAILWIND)
+10. TECH STACK & DEPENDENCIES
+11. COMPLETE FOLDER & REPOSITORY STRUCTURE
+12. API REFERENCE & ROUTERS
+13. DEFAULT CREDENTIALS & ROLE-BASED ACCESS CONTROL (RBAC)
+14. CONFIGURATION & ENVIRONMENT VARIABLES
+15. HOW TO SET UP AND RUN LOCALLY
+16. RESILIENCE, OFFLINE FALLBACKS & ERROR HANDLING
+
+
+================================================================================
+1. EXECUTIVE SUMMARY & WHAT IS THIS PROJECT?
+================================================================================
+AgenticMarketer is an enterprise-ready, full-stack, autonomous multi-agent
+marketing intelligence and content generation platform. Powered by Google Gemini
+AI models and Hugging Face visual diffusion models (FLUX.1-schnell / SDXL),
+AgenticMarketer orchestrates a cooperative swarm of specialized artificial
+intelligence agents to transform raw brand guidelines, product documentation, and
+marketing goals into complete, production-ready, omnichannel campaigns.
+
+Instead of a generic single-prompt chatbot, AgenticMarketer operates like an
+elite growth marketing agency. When given a high-level goal (for example:
+"Launch our new AI analytics tool to European B2B SaaS founders with an
+educational, high-authority tone"), the system activates six coordinated agents
+that retrieve internal company knowledge, conduct live market and competitor
+research, draft 12 channel-tailored copy formats (including a Universal Master Copy
+and Meta Threads), generate photorealistic multimodal visual banners, score SEO/
+readability metrics, and dispatch finished posts to 15 connected social networks.
+
+
+================================================================================
+2. PURPOSE & REAL-WORLD PROBLEM IT SOLVES
+================================================================================
+Modern marketing teams and growth-stage companies face several bottlenecks:
+- Brand Inconsistency: Generic AI models hallucinate product features or fail to
+  adhere to strict brand guidelines, company voice, or technical specifications.
+- Content Fragmentation: Writing separate, optimized copy for LinkedIn, X (Twitter),
+  Meta Threads, Instagram, Facebook, Reddit, Medium, Dev.to, WordPress, Discord,
+  Slack, YouTube, and TikTok takes hours of manual adaptation per campaign.
+- Lack of Deep Research: Most social tools do not cross-reference current web
+  trends, competitor angles, or viral hooks in real-time.
+- Plain Text Limitations: Marketers need feasible, multimodal creative assets—not
+  just raw text—with photorealistic imagery, visual mockups, and real platform previews.
+- Multi-Tool Chaos: Teams currently juggle separate subscriptions for copy
+  generation, SEO scoring, AI image design, brand document wikis, and social
+  media schedulers.
+
+AgenticMarketer solves this by unifying the entire pipeline into one continuous,
+automated workflow grounded in the company's own verified documents.
+
+
+================================================================================
+3. HOW IT WORKS (END-TO-END WORKFLOW)
+================================================================================
+The workflow follows a 4-stage lifecycle:
+
+STAGE 1: KNOWLEDGE INGESTION (RAG)
+  1. The user uploads company documents (PDFs, DOCX, TXT, Markdown) via the
+     Knowledge Base page or attaches files directly on the Dashboard.
+  2. The backend extracts clean text, splits it into semantic chunks with overlap,
+     and computes vector embeddings using Google's embedding models
+     (with a local TF-IDF cosine fallback).
+  3. Chunk metadata, text, and vector embeddings are saved to the local data store.
+
+STAGE 2: CAMPAIGN CONFIGURATION
+  1. The marketer accesses the Dashboard.
+  2. The user configures:
+     - Campaign Goal & Directive (e.g., "Feature announcement for v2.0")
+     - Target Audience (e.g., "Enterprise DevOps Engineers")
+     - Tone of Voice (e.g., "Authoritative, technical, inspiring")
+     - Content Type & Target Channels (LinkedIn, Twitter/X, Threads, Meta, Reddit, etc.)
+     - Reference files attached specifically to this campaign run.
+
+STAGE 3: AUTONOMOUS MULTI-AGENT PIPELINE
+  When the user clicks "Launch 6-Agent Swarm", the backend pipeline triggers the 6
+  specialized agents in real-time sequence. Each agent takes the accumulated context
+  and outputs from previous agents, enriches the data, and passes it forward.
+
+STAGE 4: REVIEW, ASSET INSPECTION & OMNICHANNEL BROADCAST
+  1. The marketer views real-time agent output in the Clean Studio view.
+  2. The system presents:
+     - Visual Creative Showcase featuring the Hugging Face FLUX.1 rendered image.
+     - 12 Channel-Tailored Cards with interactive social feed mockups (Threads, LinkedIn, Ads).
+     - Universal Master Copy ("Post Anywhere") for versatile cross-platform posting.
+     - Live SEO & readability audit breakdown (Flesch-Kincaid, keyword density).
+  3. The marketer can copy single sections or click "Broadcast Campaign" to dispatch
+     content to 15 supported platforms and outbound webhooks.
+
+
+================================================================================
+4. THE 6 AUTONOMOUS AI AGENTS EXPLAINED
+================================================================================
+AgenticMarketer's brain is divided into 6 specialized personas:
+
+1. DOCUMENT INGESTION & BRAND RETRIEVAL AGENT
+   - Role: The Librarian & Brand Guardian.
+   - Function: Analyzes the campaign goal, queries the vector knowledge base for
+     relevant brand chunks, extracts brand tone guidelines, core value
+     propositions, and disallowed claims.
+   - Output: Grounded brand context packet injected into subsequent agent prompts.
+
+2. MARKET RESEARCH & COMPETITOR INTELLIGENCE AGENT
+   - Role: The Growth Strategist & Market Analyst.
+   - Function: Performs live web searches (via DuckDuckGo) for real-time market
+     developments, viral industry angles, customer pain points, and competitor
+     positioning.
+   - Output: Strategic research brief containing top hooks, target keyword themes,
+     and competitive differentiation angles.
+
+3. CREATIVE COPYWRITER & MULTI-CHANNEL ADAPTATION AGENT
+   - Role: The Master Copywriter & Creative Strategist.
+   - Function: Takes grounded brand documents and live market research to craft
+     tailor-made posts across 12 distinct platforms:
+     * 🌟 Universal Master Copy (Post Anywhere)
+     * 🎯 Hook & Headline Variations (Contrarian, ROI, Proof)
+     * 💼 LinkedIn Thought Leadership (Framework + Hashtags)
+     * 🧵 X (Twitter) Auto-Thread (3-part with char limits)
+     * 🤖 Reddit Discussion (Community-first formatting)
+     * 📝 Medium / Dev.to / Blog Article (Long-form editorial)
+     * 🧵 Meta Threads (Conversational microblog under 500 chars)
+     * 🎥 Short-Form Video Script (Reels / TikTok / Shorts)
+     * 💬 Community Announcement (Discord / Slack)
+     * 📧 B2B Outbound Cold Email (High-open subject + pitch)
+     * 📱 Meta & Paid Social Ad Creative (Primary, Headline, Description)
+     * 🎨 Multimodal Visual Generation Prompt
+   - Output: Complete, conversion-engineered omnichannel marketing bundle.
+
+4. MULTIMODAL VISUAL GENERATION AGENT
+   - Role: The Creative Director & AI Visual Designer.
+   - Function: Synthesizes campaign theme into a photorealistic commercial photography
+     prompt and routes generation to Hugging Face Diffusion (FLUX.1-schnell / SDXL)
+     with secondary failover to Gemini Image models and crisp typography overlay.
+   - Output: Image URL, multimodal creative banner, and downloadable visual assets.
+
+5. SEO, READABILITY & MARKETING COMPLIANCE AGENT
+   - Role: The Quality Control & SEO Specialist.
+   - Function: Performs mathematical text analysis on generated copy using textstat:
+     * Flesch-Kincaid Grade Level & Reading Ease score.
+     * Keyword density and primary/secondary keyword placements.
+     * Social length limit checks (flags if Twitter post > 280 chars, Threads > 500 chars).
+     * Compliance review against brand safety rules.
+   - Output: Numerical health score (0-100), audit badges, and recommendations.
+
+6. OMNICHANNEL SOCIAL PUBLISHER AGENT
+   - Role: The Distribution Manager.
+   - Function: Interfaces with 15 social media APIs and webhook endpoints:
+     LinkedIn, X/Twitter, Meta Facebook, Instagram, Meta Threads, Reddit, YouTube,
+     TikTok, Pinterest, Medium, Dev.to, WordPress, Discord, Slack, and Universal Webhook.
+   - Output: Dispatch status, platform receipt IDs, and timestamped audit logs.
+
+
+================================================================================
+5. 12 OMNICHANNEL OUTPUT PLATFORMS & MASTER COPY
+================================================================================
+Every campaign run produces complete, copy-paste and publish-ready outputs for:
+
+1. 🌟 UNIVERSAL MASTER COPY (POST ANYWHERE)
+   - A high-impact, versatile post formatted with a strong hook, 3 core value pillars,
+     proof points, and a universal CTA. Suitable for any blog, forum, network, or site.
+
+2. 🎯 HOOK & HEADLINE VARIATIONS
+   - 3 distinct angles: The Contrarian Angle, High-Impact Solution, and Data-Driven Hook.
+
+3. 💼 LINKEDIN THOUGHT LEADERSHIP
+   - B2B authority post with opening hook, 3-step value framework, engagement question,
+     and relevant business hashtags.
+
+4. 🧵 X (TWITTER) AUTO-THREAD
+   - 3-part viral thread (1/3 Problem, 2/3 Tactical Solution, 3/3 Actionable CTA) with
+     live character counters (<280 chars per tweet).
+
+5. 🤖 REDDIT COMMUNITY DISCUSSION
+   - Authentic, non-promotional discussion starter with topic title and open question
+     formatted for r/marketing or niche subreddits.
+
+6. 📝 MEDIUM / DEV.TO / WORDPRESS BLOG ARTICLE
+   - Full structured long-form editorial with Title, Introduction, 2 Tactical Sections,
+     and Conclusion.
+
+7. 🧵 META THREADS MICROBLOG POST
+   - Punchy, narrative-driven micro-thread under 500 characters designed for viral
+     community engagement and conversational discovery.
+
+8. 🎥 VIDEO SCRIPT (REELS / TIKTOK / SHORTS)
+   - 30-60 second storyboard with Scene Directions, Visual Cues, Audio/Voiceover script,
+     and trending hashtags.
+
+9. 💬 DISCORD & SLACK COMMUNITY BROADCAST
+   - Formatted broadcast card with emoji highlights, bulleted takeaways, and instant access link.
+
+10. 📧 B2B OUTBOUND COLD EMAIL
+    - High-open subject line, personalized opener, 3-sentence value proposition under
+      120 words, and low-friction 5-minute CTA.
+
+11. 📱 META & PAID SOCIAL AD CREATIVE
+    - Primary Text, Punchy Headline, and Meta Description engineered for high-CTR feed ads.
+
+12. 🎨 MULTIMODAL VISUAL GENERATION PROMPT
+    - Precision artistic directive fed to the Image Generation Agent for photorealistic visuals.
+
+
+================================================================================
+6. MULTIMODAL VISUAL ENGINE (HUGGING FACE FLUX.1 & GEMINI)
+================================================================================
+AgenticMarketer features a dedicated multimodal visual creative pipeline:
+
+1. Primary Engine: Hugging Face Diffusion (`black-forest-labs/FLUX.1-schnell` / `SDXL`)
+   - Dual Invocation: Queries via `huggingface_hub.InferenceClient` with automatic
+     fallback to direct HTTP REST API calls.
+   - Generates photorealistic 1024x1024 commercial campaign visuals.
+
+2. Secondary / Fallback: Google Gemini Generative Vision (`gemini-3-pro-image`)
+   - Engaged if HF rate limits are reached or as an alternative endpoint.
+
+3. Vector Typography Compositing:
+   - High-contrast TrueType headline text overlays composited onto generated images.
+
+4. Dashboard Creative Showcase:
+   - Preview campaign visuals right alongside the copy in the Clean Studio view.
+   - 1-click Download, Enlarge, and Visual Studio prompt editor.
+
+
+================================================================================
+7. SYSTEM ARCHITECTURE & DESIGN
+================================================================================
+
+[ FRONTEND CLIENT ]
+(Next.js 16 + React 19 + Tailwind CSS + Lucide Icons + Framer Motion)
+  |
+  |  REST API / JSON Payloads with JWT Bearer Auth
+  v
+[ FASTAPI BACKEND SERVER ] (Port 8000)
+  |-- CORS Middleware (Allows credentials, origins from localhost:3000, localhost:5173)
+  |-- Security Layer (bcrypt password hashing, jose JWT encode/decode)
+  |-- Routers:
+        |-- /api/auth    (User login, registration, token refresh, user management)
+        |-- /api/rag     (Doc upload, text extraction, semantic search)
+        |-- /api/swarm   (Campaign orchestration, image serving, 6-agent pipeline)
+        |-- /api/publish (Social network dispatch, history tracking across 15 platforms)
+        |-- /api/health  (System readiness, model statuses, active agent count)
+        |-- /api/stats   (Workspace analytics, chunk counts, team seats)
+  |
+  |-- [ AI & EXTERNAL SERVICES ]
+        |-- Google Gemini API (gemini-3.6-flash / gemini-3.7-flash / text-embedding-004)
+        |-- Hugging Face API (FLUX.1-schnell / SDXL image generation)
+        |-- DuckDuckGo Search API (live web market intelligence)
+        |-- textstat (readability calculations)
+  |
+  |-- [ LOCAL DATA PERSISTENCE ] (backend/data/)
+        |-- users.json           (User accounts, password hashes, RBAC roles)
+        |-- rag_metadata.json    (Indexed documents, file sizes, chunk IDs)
+        |-- rag_chunks.json      (Document text chunks, vector embeddings)
+        |-- publish_history.json (Log of all published social campaigns)
+        |-- uploads/images/      (AI-generated campaign banners)
+
+
+================================================================================
+8. VECTOR RETRIEVAL (RAG) & KNOWLEDGE BASE ENGINE
+================================================================================
+The Retrieval-Augmented Generation (RAG) system is built inside:
+`backend/app/rag/vector_store.py`
+
+Key technical highlights:
+1. Multi-Format Parsing:
+   - PDF files via 'pypdf'
+   - Microsoft Word documents via 'python-docx'
+   - Plain text (.txt) and Markdown (.md) via standard UTF-8 parsing
+2. Overlapping Semantic Chunks:
+   - Configurable chunk size (default: 500 characters)
+   - Overlap window (default: 80 characters) to prevent context loss across boundaries.
+3. Hybrid Dual-Layer Vector Search:
+   - Primary: Computes dense vector embeddings using Google's embedding models.
+     Query similarity is computed using vectorized numpy cosine similarity.
+   - Fallback: If external network is offline, the engine activates a built-in
+     term-frequency cosine vectorizer so search and retrieval never crash.
+
+
+================================================================================
+9. FRONTEND USER INTERFACE & PAGES (NEXT.JS + TAILWIND)
+================================================================================
+The frontend is a modern web application built with Next.js App Router:
+
+1. LOGIN & REGISTRATION (`/login`, `/register`):
+   - Glassmorphism design with deep slate/indigo cyber styling.
+   - JWT token storage in localStorage + reactive AuthContext.
+   - Includes convenient 1-click Demo Account login buttons for testing.
+
+2. SWARM DASHBOARD (`/dashboard`):
+   - Campaign configuration form: goal, audience, tone selector, content type.
+   - Real-time animated agent execution console showing current agent steps.
+   - Multimodal Visual Creative Banner displaying FLUX.1 rendered artwork.
+   - 12 Channel Filter Tabs with authentic social previews (Threads, LinkedIn, Ads).
+   - Raw Markdown / Clean Studio view toggle with 1-click clipboard copy.
+   - Direct "Publish / Broadcast" modal supporting 15 social channels.
+
+3. KNOWLEDGE BASE (`/knowledge`):
+   - Document upload dropzone supporting PDF, Word, TXT, and Markdown files.
+   - Table of indexed company documents with chunk counts, file sizes, and deletion controls.
+   - Interactive "Live Semantic Vector Search Tester".
+
+4. ADMIN PANEL (`/admin`):
+   - Available to 'leader' and 'admin' roles.
+   - Real-time system telemetry and team user management.
+
+
+================================================================================
+10. TECH STACK & DEPENDENCIES
+================================================================================
+
+BACKEND (Python 3.10+):
+- fastapi (0.110.0+)       - High performance asynchronous web API framework
+- uvicorn (0.28.0+)       - ASGI lightning-fast web server
+- google-genai / gai      - Google GenAI SDK (gemini-3.6-flash / embeddings)
+- huggingface_hub / httpx - Hugging Face FLUX.1 & SDXL image generation
+- python-jose             - JWT token encoding and verification
+- passlib[bcrypt]         - Cryptographic password hashing
+- pypdf                   - PDF text parsing and extraction
+- python-docx             - Word document (.docx) parsing
+- duckduckgo-search       - Real-time web intelligence and market trends
+- textstat                - Mathematical readability and linguistic grading
+- numpy / pydantic        - High-speed array math and runtime data validation
+
+FRONTEND (Node.js 18+):
+- next (16.3.6)           - Next.js Turbopack App Router
+- react (19.0.0)          - Core UI library
+- tailwindcss             - Modern utility-first CSS design system
+- lucide-react            - Modern iconography
+- axios                   - HTTP client with automatic Authorization headers
+
+
+================================================================================
+11. COMPLETE FOLDER & REPOSITORY STRUCTURE
+================================================================================
+
+AgenticMarketer-Automated-Marketing-Intelligence/
+│
+├── .env                             <- Active environment secrets (Gemini API keys, HF token, JWT)
+├── .env.example                     <- Template environment file for quick onboarding
+├── .gitignore                       <- Protects .env, node_modules, .venv, and logs from Git
+├── README.md                        <- Project README with quick-start summary
+├── PROJECT_OVERVIEW.txt             <- [THIS FILE] Complete documentation and manual
+│
+├── backend/                         <- FastAPI Python Backend Service
+│   ├── __init__.py                  <- Root backend package marker
+│   ├── requirements.txt             <- Python dependencies list
+│   │
+│   ├── app/                         <- Application source code
+│   │   ├── __init__.py
+│   │   ├── main.py                  <- FastAPI factory, CORS setup, router mounting, health/stats
+│   │   │
+│   │   ├── core/                    <- Core settings & authentication
+│   │   │   ├── __init__.py
+│   │   │   ├── config.py            <- Pydantic BaseSettings loading from .env
+│   │   │   └── security.py          <- Password hashing (bcrypt) and JWT logic
+│   │   │
+│   │   ├── agents/                  <- Multi-agent intelligence engine
+│   │   │   ├── __init__.py
+│   │   │   └── swarm_pipeline.py    <- The 6-agent swarm pipeline execution logic
+│   │   │
+│   │   ├── rag/                     <- Knowledge base & vector search
+│   │   │   ├── __init__.py
+│   │   │   └── vector_store.py      <- Multi-format document parser & hybrid vector store
+│   │   │
+│   │   └── routers/                 <- API endpoints grouped by domain
+│   │       ├── __init__.py
+│   │       ├── auth.py              <- /api/auth (Login, register, me, users, roles)
+│   │       ├── rag.py               <- /api/rag (Doc upload, list docs, delete, vector query)
+│   │       ├── swarm.py             <- /api/swarm (Run campaign swarm, serve generated images)
+│   │       └── publish.py           <- /api/publish (Social media broadcast & history across 15 platforms)
+│   │
+│   └── data/                        <- File-based database storage
+│       ├── users.json               <- Persistent user accounts and hashed passwords
+│       ├── rag_metadata.json        <- Metadata index of ingested brand documents
+│       ├── rag_chunks.json          <- Chunked document segments and embedding vectors
+│       ├── publish_history.json     <- Chronological log of all published social campaigns
+│       └── uploads/images/          <- AI-generated campaign banner graphics (.png)
+│
+└── frontend/                        <- Next.js 16 + React 19 Frontend Application
+    ├── package.json                 <- Node.js scripts and frontend dependencies
+    ├── next.config.mjs              <- Next.js configuration
+    │
+    └── app/                         <- Next.js App Router
+        ├── layout.jsx               <- Root layout provider
+        ├── page.jsx                 <- Landing page
+        ├── login/page.jsx           <- Sign-in page with 1-click demo accounts
+        ├── register/page.jsx        <- Registration page
+        ├── dashboard/page.jsx       <- Central marketing campaign workbench
+        ├── knowledge/page.jsx       <- RAG document management & vector search tester
+        └── admin/page.jsx           <- System telemetry & user role management
+
+
+================================================================================
+12. API REFERENCE & ROUTERS
+================================================================================
+
+SYSTEM & DIAGNOSTICS:
+- GET  /api/health   -> { "status": "healthy", "version": "1.0.0", "active_agents": 6 }
+- GET  /api/stats    -> { "total_documents": int, "total_chunks": int, "tokens_used": int }
+
+AUTHENTICATION ROUTER (/api/auth):
+- POST /api/auth/register           -> Creates user account
+- POST /api/auth/login              -> Authenticates and returns JWT bearer token
+- GET  /api/auth/me                 -> Current profile
+- GET  /api/auth/users              -> List team members (Leader/Admin)
+- PUT  /api/auth/users/{id}/role    -> Updates user role
+
+KNOWLEDGE & RAG ROUTER (/api/rag):
+- POST /api/rag/upload              -> Ingests PDF, DOCX, TXT into semantic vector store
+- GET  /api/rag/documents           -> Lists all indexed documents
+- DELETE /api/rag/documents/{name}  -> Deletes document and cleans vector chunks
+- POST /api/rag/query               -> Semantic vector search query
+
+SWARM PIPELINE ROUTER (/api/swarm):
+- POST /api/swarm/run-sync          -> Executes full 6-agent campaign swarm synchronously
+- POST /api/swarm/launch            -> Asynchronously launches swarm
+- GET  /api/swarm/stream/{run_id}   -> SSE real-time telemetry stream
+- GET  /api/swarm/images/{filename} -> Serves AI-generated image assets
+
+PUBLISHING ROUTER (/api/publish):
+- POST /api/publish/broadcast       -> Broadcasts campaign copy across 15 connected platforms
+- GET  /api/publish/history         -> Audit log of all broadcasts with timestamps
+
+
+================================================================================
+13. DEFAULT CREDENTIALS & ROLE-BASED ACCESS CONTROL (RBAC)
+================================================================================
+The platform comes pre-configured with default accounts for instant evaluation:
+
++---------------------------+------------+-------------------------------------+
+| Email                     | Password   | Role & Permissions                  |
++---------------------------+------------+-------------------------------------+
+| mann@company.com          | admin123   | leader   (Full system access & admin)|
+| admin@company.com         | admin123   | admin    (Manage users, docs, swarm)|
+| marketer@company.com      | market123  | marketer (Run swarm, RAG & publish) |
++---------------------------+------------+-------------------------------------+
+
+
+================================================================================
+14. CONFIGURATION & ENVIRONMENT VARIABLES
+================================================================================
+Configuration is centralized in the `.env` file at the project root:
+
+Key Variables:
+--------------------------------------------------------------------------------
+GEMINI_API_KEY      | Your Google AI Studio API key (gemini-3.6-flash).
+                    | Free key at: https://aistudio.google.com/
+--------------------------------------------------------------------------------
+HUGGINGFACE_API_KEY | Hugging Face token for FLUX.1-schnell / SDXL image generation.
+                    | Free key at: https://huggingface.co/settings/tokens
+--------------------------------------------------------------------------------
+JWT_SECRET          | Cryptographic secret string used to sign and verify JWT tokens.
+--------------------------------------------------------------------------------
+BACKEND_PORT        | FastAPI server port (Default: 8000).
+--------------------------------------------------------------------------------
+
+
+================================================================================
+15. HOW TO SET UP AND RUN LOCALLY
+================================================================================
+
+PREREQUISITES:
+- Python 3.10+ installed
+- Node.js 18+ and npm installed
+
+STEP 1: CONFIGURE ENVIRONMENT
+1. Ensure `.env` exists in the project root with your API keys.
+
+STEP 2: START THE BACKEND SERVICE
+1. Open a terminal in the project root:
+   .venv\Scripts\activate
+2. Start the FastAPI server:
+   uvicorn backend.app.main:app --reload --port 8000
+3. API is live at http://localhost:8000 (Swagger docs at /docs)
+
+STEP 3: START THE FRONTEND SERVICE
+1. Open a second terminal window in `frontend/`:
+   npm run dev
+2. Navigate to http://localhost:3000
+
+STEP 4: LOG IN AND TEST
+1. Click the "Demo Leader" button or log in with mann@company.com / admin123.
+2. Head to "Dashboard", type your campaign goal, and click "Launch 6-Agent Swarm".
+
+
+================================================================================
+16. RESILIENCE, OFFLINE FALLBACKS & ERROR HANDLING
+================================================================================
+- Zero External Database Dependencies: Pure JSON flat-files in `backend/data/`.
+- Graceful AI Degradation: Multi-model candidate fallback + intelligent synthesis.
+- Dual-Engine Visual Generation: Hugging Face FLUX.1 + Gemini Image API + Typography.
+- Strict Type Validation: All payloads validated via Pydantic v2 schemas.
+
+================================================================================
+                          END OF PROJECT DOCUMENTATION
+================================================================================

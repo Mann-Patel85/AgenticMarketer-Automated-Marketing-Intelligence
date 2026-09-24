@@ -13,6 +13,7 @@ python-jose[cryptography]>=3.3.0
 
 # AI & LLM
 google-generativeai>=0.8.0
+huggingface_hub>=0.20.0
 
 # Document Ingestion & RAG
 pypdf>=5.0.0
@@ -25,3 +26,4 @@ textstat>=0.7.0
 # Streaming & HTTP Client
 sse-starlette>=2.0.0
 httpx>=0.28.0
+beautifulsoup4>=4.12.0

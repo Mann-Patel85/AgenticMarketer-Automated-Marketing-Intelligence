@@ -7,7 +7,7 @@ Persists users to JSON file storage in backend/data/users.json.
 import json
 import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, EmailStr, Field
 from fastapi import APIRouter, HTTPException, Depends, status
 
@@ -202,3 +202,19 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         email=user["email"],
         role=user["role"],
     )
+
+
+@router.get("/users", response_model=List[UserProfileResponse])
+async def get_users(current_user: dict = Depends(get_current_user)):
+    """Retrieve list of workspace team members (for workspace management)."""
+    users = _load_users()
+    return [
+        UserProfileResponse(
+            id=u.get("id", str(uuid.uuid4())),
+            name=u.get("name", "User"),
+            email=u.get("email", email),
+            role=u.get("role", "marketer"),
+        )
+        for email, u in users.items()
+    ]
+

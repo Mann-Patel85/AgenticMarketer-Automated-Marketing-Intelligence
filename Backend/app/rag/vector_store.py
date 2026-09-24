@@ -158,15 +158,14 @@ class RAGVectorStore:
         settings = get_settings()
         if settings.GEMINI_API_KEY:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=settings.GEMINI_API_KEY)
-                result = genai.embed_content(
-                    model="models/text-embedding-004",
-                    content=text[:2000],
-                    task_type="retrieval_document"
+                from google import genai as gai
+                client = gai.Client(api_key=settings.GEMINI_API_KEY)
+                result = client.models.embed_content(
+                    model="gemini-embedding-001",
+                    contents=text[:2000],
                 )
-                if "embedding" in result:
-                    return result["embedding"]
+                if result and result.embeddings:
+                    return result.embeddings[0].values
             except Exception:
                 # Fall back to local term vector
                 pass
@@ -239,15 +238,49 @@ class RAGVectorStore:
         return self._load_metadata()
 
     def delete_document(self, doc_id: str) -> bool:
-        """Remove document and its vector chunks from the store."""
+        """Remove document and its vector chunks from the store by ID or filename."""
         metadata = self._load_metadata()
-        updated_meta = [doc for doc in metadata if doc["id"] != doc_id]
+        target = str(doc_id).strip()
+        matched = [
+            doc for doc in metadata
+            if doc.get("id") == target or doc.get("filename") == target or doc.get("filename", "").lower() == target.lower()
+        ]
 
-        if len(updated_meta) == len(metadata):
+        if not matched:
             return False
 
+        removed_ids = {doc["id"] for doc in matched}
+        removed_filenames = {doc.get("filename") for doc in matched if doc.get("filename")}
+
+        updated_meta = [doc for doc in metadata if doc["id"] not in removed_ids]
+
         chunks = self._load_chunks()
-        updated_chunks = [c for c in chunks if c["doc_id"] != doc_id]
+        updated_chunks = [
+            c for c in chunks
+            if c.get("doc_id") not in removed_ids and c.get("doc_name") not in removed_filenames
+        ]
+
+        # Clean up physical uploaded files
+        settings = get_settings()
+        uploads_dir = Path(settings.UPLOAD_DIRECTORY)
+        for fname in removed_filenames:
+            if not fname:
+                continue
+            fpath = uploads_dir / fname
+            if fpath.exists() and fpath.is_file():
+                try:
+                    fpath.unlink()
+                except Exception:
+                    pass
+            # Also clean up any legacy stem variations on disk
+            stem = Path(fname).stem
+            ext = Path(fname).suffix
+            for match in uploads_dir.glob(f"{stem}*{ext}"):
+                if match.is_file():
+                    try:
+                        match.unlink()
+                    except Exception:
+                        pass
 
         self._save_metadata(updated_meta)
         self._save_chunks(updated_chunks)
@@ -288,3 +321,5 @@ class RAGVectorStore:
 
 # Singleton instance
 rag_store = RAGVectorStore()
+
+
