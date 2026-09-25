@@ -26,6 +26,7 @@ class SwarmLaunchRequest(BaseModel):
     goal: str = Field(..., min_length=5, description="Primary campaign objective or directive")
     audience: Optional[str] = Field("B2B Decision Makers", description="Target customer persona")
     tone: Optional[str] = Field("Authoritative", description="Brand voice & tone profile")
+    content_type: Optional[str] = Field("social_bundle", description="Campaign format: social_bundle, seo_article, landing_page")
     channels: Optional[List[str]] = Field(default_factory=lambda: ["linkedin", "x", "meta"])
     files: Optional[List[Any]] = Field(default_factory=list)
 

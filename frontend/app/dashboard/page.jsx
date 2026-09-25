@@ -612,6 +612,7 @@ export default function DashboardPage() {
         if (ws.clarityScore !== undefined && ws.clarityScore !== null) setClarityScore(ws.clarityScore);
         if (Array.isArray(ws.imageAttemptsLog) && ws.imageAttemptsLog.length > 0) setImageAttemptsLog(ws.imageAttemptsLog);
         if (ws.seoData) setSeoData(ws.seoData);
+        if (ws.seoBrief) setSeoBrief(ws.seoBrief);
         if (Array.isArray(ws.executionLogs) && ws.executionLogs.length > 0) setExecutionLogs(ws.executionLogs);
         if (ws.publishPlatforms && typeof ws.publishPlatforms === 'object') setPublishPlatforms(ws.publishPlatforms);
         if (Array.isArray(ws.publishedChannels) && ws.publishedChannels.length > 0) setPublishedChannels(ws.publishedChannels);
@@ -675,6 +676,7 @@ export default function DashboardPage() {
             clarityScore,
             imageAttemptsLog,
             seoData,
+            seoBrief,
             executionLogs,
             publishPlatforms,
             publishedChannels,
@@ -920,6 +922,7 @@ export default function DashboardPage() {
                 clarityScore: bundle.image_clarity_score || null,
                 imageAttemptsLog: bundle.image_attempts_log || [],
                 seoData: bundle.seo_metrics || null,
+                seoBrief: bundle.seo_brief || null,
             });
 
         } catch (err) {
@@ -1389,19 +1392,90 @@ export default function DashboardPage() {
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                                        <label htmlFor="brand-tone-input" className="block text-[11px] font-medium text-slate-400 mb-1">
                                             Brand Voice & Tone
                                         </label>
-                                        <select
+                                        
+                                        {/* Writeable Custom Text Input */}
+                                        <input
+                                            id="brand-tone-input"
+                                            type="text"
+                                            list="tone-presets-list"
                                             value={tone}
                                             onChange={(e) => setTone(e.target.value)}
-                                            className="w-full bg-slate-950/90 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
-                                        >
-                                            <option value="Authoritative & High-Energy">Authoritative & Bold</option>
-                                            <option value="Conversational & Friendly">Engaging & Conversational</option>
-                                            <option value="Data-driven & Technical">Data-driven & Rigorous</option>
-                                            <option value="Luxury & Exclusive">Minimalist & Premium</option>
-                                        </select>
+                                            placeholder="e.g. Authoritative & High-Energy"
+                                            className="w-full bg-slate-950/90 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 transition"
+                                        />
+                                        
+                                        <datalist id="tone-presets-list">
+                                            <option value="Authoritative & High-Energy" />
+                                            <option value="Conversational & Friendly" />
+                                            <option value="Data-driven & Technical" />
+                                            <option value="Educational & Empathetic" />
+                                            <option value="Contrarian & Provocative" />
+                                            <option value="Urgent & High-Conversion" />
+                                            <option value="Minimalist & Premium" />
+                                            <option value="Witty & Humorous" />
+                                        </datalist>
+
+                                        {/* Preset Selection Dropdown */}
+                                        <div className="flex items-center gap-1.5 mt-1.5">
+                                            <span className="text-[10px] font-mono text-slate-500 shrink-0">Presets:</span>
+                                            <select
+                                                value=""
+                                                onChange={(e) => {
+                                                    if (e.target.value) {
+                                                        setTone(e.target.value);
+                                                    }
+                                                }}
+                                                className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-indigo-300 font-medium py-1 px-2 focus:outline-none cursor-pointer transition truncate"
+                                            >
+                                                <option value="" disabled>Choose a preset tone...</option>
+                                                <option value="Authoritative & High-Energy">⚡ Authoritative & Bold</option>
+                                                <option value="Conversational & Friendly">💬 Engaging & Conversational</option>
+                                                <option value="Data-driven & Technical">📊 Data-driven & Rigorous</option>
+                                                <option value="Educational & Empathetic">🎓 Educational & Empathetic</option>
+                                                <option value="Contrarian & Provocative">🔥 Contrarian & Provocative</option>
+                                                <option value="Urgent & High-Conversion">🎯 Urgent & High-Conversion</option>
+                                                <option value="Minimalist & Premium">✨ Minimalist & Premium</option>
+                                                <option value="Witty & Humorous">😄 Witty & Humorous</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Quick Attribute Tags */}
+                                        <div className="flex flex-wrap gap-1 mt-1.5">
+                                            {[
+                                                'Authoritative',
+                                                'Conversational',
+                                                'Data-Driven',
+                                                'Educational',
+                                            ].map((t) => {
+                                                const isSelected = tone.toLowerCase().includes(t.toLowerCase());
+                                                return (
+                                                    <button
+                                                        key={t}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (isSelected) {
+                                                                const parts = tone
+                                                                    .split(/,\s*|\s*&\s*/)
+                                                                    .filter((item) => item.trim() && item.toLowerCase() !== t.toLowerCase());
+                                                                setTone(parts.join(' & ') || 'Authoritative & High-Energy');
+                                                            } else {
+                                                                setTone((prev) => (prev ? `${prev}, ${t}` : t));
+                                                            }
+                                                        }}
+                                                        className={`text-[10px] px-2 py-0.5 rounded-lg border transition cursor-pointer select-none ${
+                                                            isSelected
+                                                                ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300 font-semibold'
+                                                                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-300'
+                                                        }`}
+                                                    >
+                                                        {isSelected ? '✓ ' : '+ '}{t}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
 

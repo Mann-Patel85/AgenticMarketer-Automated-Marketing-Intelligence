@@ -24,14 +24,14 @@ class Settings(BaseSettings):
 
     # ── Google Gemini AI ─────────────────────────────────────────────
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.6-flash"
-    GEMINI_IMAGE_MODEL: str = "gemini-3-pro-image"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_IMAGE_MODEL: str = "gemini-2.5-flash"
 
     @property
     def effective_text_model(self) -> str:
         """Returns valid text model identifier for Google GenAI SDK."""
         if not self.GEMINI_MODEL or "image" in self.GEMINI_MODEL.lower():
-            return "gemini-3.6-flash"
+            return "gemini-2.5-flash"
         return self.GEMINI_MODEL
 
     @property
@@ -48,6 +48,27 @@ class Settings(BaseSettings):
         """Returns Hugging Face API token from HUGGINGFACE_API_KEY or HF_TOKEN env var."""
         import os
         return self.HUGGINGFACE_API_KEY or os.getenv("HF_TOKEN") or ""
+
+    # ── Grok AI (xAI API) ────────────────────────────────────────────
+    GROK_API_KEY: str = ""
+    XAI_API_KEY: str = ""
+    GROK_MODEL: str = "grok-2-latest"
+
+    @property
+    def effective_grok_token(self) -> str:
+        """Returns Grok/xAI API token from GROK_API_KEY or XAI_API_KEY env var."""
+        import os
+        return self.GROK_API_KEY or self.XAI_API_KEY or os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY") or ""
+
+    # ── Groq Cloud AI (Groq API) ─────────────────────────────────────
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
+
+    @property
+    def effective_groq_token(self) -> str:
+        """Returns Groq API token from GROQ_API_KEY or Groq_API_KEY env var."""
+        import os
+        return self.GROQ_API_KEY or os.getenv("GROQ_API_KEY") or os.getenv("Groq_API_KEY") or ""
 
     # ── Storage & RAG Directories ────────────────────────────────────
     DATA_DIRECTORY: str = str(Path(__file__).resolve().parents[2] / "data")

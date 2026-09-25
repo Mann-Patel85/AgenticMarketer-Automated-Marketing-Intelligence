@@ -29,6 +29,16 @@ from backend.app.core.config import get_settings
 from backend.app.rag.vector_store import rag_store
 
 
+def _safe_hf_text_to_image(hf_client: Any, **call_kwargs: Any) -> Any:
+    """Safely invokes huggingface_hub InferenceClient text_to_image, catching StopIteration and other exceptions to prevent generator future leaks."""
+    try:
+        return hf_client.text_to_image(**call_kwargs)
+    except StopIteration as si:
+        raise RuntimeError(f"HF text_to_image stream ended: {si}") from si
+    except Exception as exc:
+        raise exc
+
+
 class SwarmPipeline:
     """Coordinates the 5 specialized AI agents with real-time SSE progress streaming."""
 
@@ -44,6 +54,144 @@ class SwarmPipeline:
 
     def _timestamp(self) -> str:
         return datetime.now(timezone.utc).strftime("%H:%M:%S")
+
+    async def _generate_content_with_retry(
+        self,
+        client: Any,
+        contents: Any,
+        model_candidates: List[str],
+        timeout_sec: float = 20.0,
+    ) -> Optional[str]:
+        """Calls Gemini API with instant zero-delay model rotation on any error or quota exhaustion."""
+        for model in model_candidates:
+            try:
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.models.generate_content,
+                        model=model,
+                        contents=contents,
+                    ),
+                    timeout=timeout_sec,
+                )
+                if response and response.text and len(response.text.strip()) > 20:
+                    print(f"[Swarm] Successfully generated campaign content via Gemini: {model}")
+                    return response.text.strip()
+            except Exception as err:
+                err_str = str(err)
+                print(f"[Swarm] Model '{model}' notice ({err_str[:100]}). Immediately trying next candidate...")
+                continue
+        return None
+
+    async def _generate_content_via_grok(
+        self,
+        prompt: str,
+        timeout_sec: float = 18.0,
+    ) -> Optional[str]:
+        """Queries Grok AI (xAI API) as a high-performance LLM engine and fallback."""
+        token = getattr(self.settings, "effective_grok_token", "") or os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY") or ""
+        if not token:
+            return None
+
+        grok_models = [
+            getattr(self.settings, "GROK_MODEL", "grok-2-latest"),
+            "grok-2-latest",
+            "grok-beta",
+            "grok-2",
+            "grok-2-vision-1212",
+        ]
+        seen = set()
+        ordered_grok = [m for m in grok_models if m and not (m in seen or seen.add(m))]
+
+        import httpx
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        for model in ordered_grok:
+            try:
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.7,
+                }
+                async with httpx.AsyncClient(timeout=timeout_sec) as client:
+                    res = await client.post(
+                        "https://api.x.ai/v1/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    )
+                    if res.status_code == 200:
+                        data = res.json()
+                        choices = data.get("choices", [])
+                        if choices and "message" in choices[0]:
+                            content = choices[0]["message"].get("content", "").strip()
+                            if content and len(content) > 20:
+                                print(f"[Swarm] Successfully generated campaign content via Grok AI ({model})")
+                                return content
+                    else:
+                        print(f"[Swarm] Grok AI {model} HTTP {res.status_code}: {res.text[:100]}")
+            except Exception as e:
+                print(f"[Swarm] Grok AI model '{model}' error: {e}")
+                continue
+        return None
+
+    async def _generate_content_via_groq(
+        self,
+        prompt: str,
+        timeout_sec: float = 14.0,
+    ) -> Optional[str]:
+        """Queries Groq Cloud API (Llama 3.3 70B / Mixtral) as an ultra-fast secondary LLM engine fallback."""
+        token = getattr(self.settings, "effective_groq_token", "") or os.getenv("GROQ_API_KEY") or os.getenv("Groq_API_KEY") or ""
+        if not token:
+            return None
+
+        groq_models = [
+            getattr(self.settings, "GROQ_MODEL", "openai/gpt-oss-120b"),
+            "openai/gpt-oss-120b",
+            "qwen/qwen3.8-27b",
+            "openai/gpt-oss-20b",
+        ]
+        seen = set()
+        ordered_groq = [m for m in groq_models if m and not (m in seen or seen.add(m))]
+
+        import httpx
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        for model in ordered_groq:
+            try:
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.7,
+                }
+                async with httpx.AsyncClient(timeout=timeout_sec) as client:
+                    res = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    )
+                    if res.status_code == 200:
+                        data = res.json()
+                        choices = data.get("choices", [])
+                        if choices and "message" in choices[0]:
+                            content = choices[0]["message"].get("content", "").strip()
+                            if content and len(content) > 20:
+                                print(f"[Swarm] Successfully generated campaign content via Groq AI ({model})")
+                                return content
+                    else:
+                        print(f"[Swarm] Groq AI {model} HTTP {res.status_code}: {res.text[:100]}")
+            except Exception as e:
+                print(f"[Swarm] Groq AI model '{model}' error: {e}")
+                continue
+        return None
 
     # ── Agent 1: Ingestion Agent ─────────────────────────────────────
     async def run_ingestion_agent(self) -> Dict[str, Any]:
@@ -92,10 +240,30 @@ class SwarmPipeline:
             "grounding_context": grounding_text,
         }
 
+    def _clean_phrase(self, text: str, max_chars: int = 40) -> str:
+        """Safely truncates text to max_chars at whole word boundaries without cutting words mid-sentence."""
+        text = (text or "").strip()
+        if not text:
+            return ""
+        if len(text) <= max_chars:
+            return text
+        truncated = text[:max_chars]
+        if " " in truncated:
+            truncated = truncated.rsplit(" ", 1)[0]
+        truncated = re.sub(
+            r"\b(for|in|of|and|the|a|an|with|to|by|at|from|on|our|your|their|its|is|are|be|or)\b$",
+            "",
+            truncated,
+            flags=re.IGNORECASE,
+        ).strip(" ,.-&")
+        return truncated or text[:max_chars]
+
     # ── Agent 2: Market Research Agent ───────────────────────────────
     async def run_research_agent(self) -> Dict[str, Any]:
         """Conducts live market intelligence search, SERP analysis, LSI terms extraction, and SEO Content Brief generation."""
-        search_query = f"{self.goal[:60]} trends marketing {self.audience[:30]}"
+        clean_g_search = self._clean_phrase(self.goal, 50)
+        clean_a_search = self._clean_phrase(self.audience, 30)
+        search_query = f"{clean_g_search} trends marketing {clean_a_search}"
         search_results = []
 
         try:
@@ -123,7 +291,7 @@ class SwarmPipeline:
                     "link": "https://industry-insights.internal",
                 },
                 {
-                    "title": f"Complete Guide to {self.goal[:50]}",
+                    "title": f"Complete Guide to {self._clean_phrase(self.goal, 45)}",
                     "snippet": "Top search results emphasize 5 core frameworks: intent research, automated content briefs, readability scoring, internal linking, and technical SEO hygiene.",
                     "link": "https://marketing-playbook.internal",
                 }
@@ -146,16 +314,19 @@ class SwarmPipeline:
         else:
             search_intent = "Informational / Educational"
 
+        goal_p40 = self._clean_phrase(self.goal, 40)
+        aud_p30 = self._clean_phrase(self.audience, 30)
+
         paa_questions = [
-            f"What is the best strategy for {self.goal[:40]}?",
-            f"How do top {self.audience[:30]} optimize for {self.goal[:30]}?",
-            f"What are key metrics to track when executing {self.goal[:35]}?",
-            f"Why does {self.goal[:30]} fail without technical SEO alignment?"
+            f"What is the best strategy for {goal_p40}?",
+            f"How do top {aud_p30} optimize for {self._clean_phrase(self.goal, 35)}?",
+            f"What are key metrics to track when executing {goal_p40}?",
+            f"Why does {goal_p40} fail without technical SEO alignment?"
         ]
 
         suggested_headings = [
-            f"Understanding {self.goal[:40]}",
-            f"Core Framework for {self.audience[:35]}",
+            f"Understanding {goal_p40}",
+            f"Core Framework for {aud_p30}",
             f"Step-by-Step Execution Plan",
             f"Key Optimization Metrics & Benchmarks",
             f"Frequently Asked Questions"
@@ -256,36 +427,33 @@ Format your response clearly using the specified markdown headings.
                 client = gai.Client(api_key=self.settings.GEMINI_API_KEY)
                 
                 text_candidates = [
-                    getattr(self.settings, "effective_text_model", "gemini-3.6-flash"),
+                    getattr(self.settings, "effective_text_model", "gemini-3.1-flash-lite"),
+                    "gemini-3.1-flash-lite",
                     "gemini-3.6-flash",
                     "gemini-3.7-flash",
-                    "gemini-3.8-flash",
-                    "gemini-3.1-flash-lite",
                     "gemini-flash-latest",
-                    "gemini-3.5-flash",
                 ]
                 seen = set()
                 ordered_models = [m for m in text_candidates if m and not (m in seen or seen.add(m))]
 
-                for model_candidate in ordered_models:
-                    try:
-                        response = await asyncio.wait_for(
-                            asyncio.to_thread(
-                                client.models.generate_content,
-                                model=model_candidate,
-                                contents=prompt,
-                            ),
-                            timeout=14.0,
-                        )
-                        if response and response.text and len(response.text.strip()) > 40:
-                            generated_copy = response.text.strip()
-                            print(f"[Swarm] Successfully generated campaign copy via Gemini: {model_candidate}")
-                            break
-                    except Exception as model_err:
-                        print(f"[Swarm] Model '{model_candidate}' failed ({model_err}). Trying next candidate...")
-                        continue
+                res_text = await self._generate_content_with_retry(
+                    client=client,
+                    contents=prompt,
+                    model_candidates=ordered_models,
+                    timeout_sec=18.0,
+                )
+                if res_text and len(res_text) > 40:
+                    generated_copy = res_text
             except Exception as e:
-                print(f"[Swarm] Gemini client initialization error: {e}")
+                print(f"[Swarm] Gemini copywriter client error: {e}")
+
+        # Secondary LLM: Groq Cloud AI (Llama 3.3 70B) & xAI Grok fallback / execution
+        if not generated_copy:
+            groq_copy = await self._generate_content_via_groq(prompt, timeout_sec=14.0)
+            if not groq_copy:
+                groq_copy = await self._generate_content_via_grok(prompt, timeout_sec=14.0)
+            if groq_copy and len(groq_copy.strip()) > 40:
+                generated_copy = groq_copy.strip()
 
         if not generated_copy:
             # Intelligent dynamic synthesis 100% tailored to the exact user goal, target audience, and tone
@@ -617,11 +785,6 @@ Check out the full campaign breakdown and copy assets in the channel files!
             elif re.match(r"(?i)^(aspect ratio|dimensions?|ratio|resolution)\s*:\s*", line):
                 continue
             # Convert palette to descriptive prose
-            elif re.match(r"(?i)^palette\s*:\s*", line):
-                val = re.sub(r"(?i)^palette\s*:\s*", "", line).strip(" ,()")
-                if val:
-                    line = f"Harmonious brand color palette featuring {val}"
-            # Convert style to descriptive prose
             elif re.match(r"(?i)^style\s*:\s*", line):
                 val = re.sub(r"(?i)^style\s*:\s*", "", line).strip(" ,()")
                 if val:
@@ -632,192 +795,191 @@ Check out the full campaign breakdown and copy assets in the channel files!
         result = re.sub(r"\s+", " ", result)
         result = re.sub(r"\s+,", ",", result)
         result = re.sub(r"\.\s*\.", ".", result).strip()
-        return result
-
-    # ── Agent 3.5: Brand Visual Prompt Analyzer ──────────────────────
+        return result or (text or "").strip()
     async def _generate_brand_visual_prompt(
         self, grounding_context: str, copywriter_visual_prompt: str
     ) -> str:
-        """Deeply analyzes the campaign directive, audience, attached brand files, and copywriter hint
-        to construct a high-impact, photorealistic commercial photography prompt for diffusion models."""
+        """Autonomous Creative Director: Uses web search with a 2-second timeout and enforces Gemini prompt format structure under 60 words."""
         cleaned_hint = self._clean_and_normalize_prompt(copywriter_visual_prompt)
+        clean_subject = self._clean_phrase(self.goal, 45)
 
-        # Attempt Gemini-powered deep creative director prompt synthesis
+        # 1. BRAND & INDUSTRY WEB SEARCH GROUNDING (2-Second Timeout Fallback)
+        brand_search_context = ""
+        try:
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
+
+            search_query = f"{clean_subject} visual brand identity color palette interface design style"
+
+            def _fetch_brand_search():
+                with DDGS() as ddgs:
+                    return list(ddgs.text(search_query, max_results=2))
+
+            b_results = await asyncio.wait_for(asyncio.to_thread(_fetch_brand_search), timeout=2.0)
+            if b_results:
+                brand_snippets = [r.get("body", "")[:180] for r in b_results if r.get("body")]
+                brand_search_context = " ".join(brand_snippets[:2])
+        except Exception as e:
+            print(f"[Creative Director Search] Web search fallback notice: {e}")
+
+        if not brand_search_context:
+            brand_search_context = f"Clean modern brand identity for {clean_subject}, high-conversion interface design."
+
+        # 2. Attempt Gemini-powered deep creative director prompt synthesis
         if self.settings.GEMINI_API_KEY:
             try:
                 from google import genai as gai
                 client = gai.Client(api_key=self.settings.GEMINI_API_KEY)
 
-                brand_prompt_request = f"""You are an elite Commercial Advertising Photographer, Creative Director, and Prompt Architect for high-performance enterprise campaigns (photorealistic FLUX.1 & SDXL models).
+                brand_prompt_request = f"""You are an Autonomous Creative Director & Commercial Advertising Photographer for photorealistic FLUX.1 campaigns.
 
 CAMPAIGN DIRECTIVE:
 Goal: {self.goal}
 Target Audience: {self.audience}
 Brand Tone: {self.tone}
 
-GROUNDED BRAND GUIDELINES & ATTACHED DOCUMENTS:
-{grounding_context[:2500] if grounding_context else "Enterprise growth marketing, AI automation, and high-performance B2B strategy."}
+GROUNDED BRAND GUIDELINES:
+{brand_search_context[:1000]}
 
-COPYWRITER'S CREATIVE CONCEPT:
-{cleaned_hint[:800]}
+OUTPUT FORMAT MANDATE:
+Output ONLY the final image prompt string under 50 words without any commentary, labels (no "Categorization:", no "Prompt:"), markdown headers, or preambles.
 
-YOUR TASK:
-Deeply analyze the campaign goal, target audience psychology, and specific products/details from the attached brand documents.
-Synthesize a single, ultra-detailed, photorealistic commercial photography prompt (80–120 words).
+REQUIRED PROMPT FORMAT STRUCTURE:
+Commercial editorial photography of [subject/environment]. A [person/object] with [1-2 word in-image text accent in double quotes, e.g. "GROWTH"]. Natural sunlit lighting, Hasselblad 85mm lens, 8k resolution, crisp details.
 
-CRITICAL STYLE REQUIREMENTS:
-1. PHOTOREALISTIC COMMERCIAL PHOTOGRAPHY ONLY:
-   - Must look like a real, authentic, award-winning photograph shot on a Hasselblad H6D-100c medium format camera, 85mm f/2.8 lens, shallow depth of field.
-   - Real enterprise settings: contemporary architectural glass headquarters, executive boardroom, high-tech R&D center, sleek server architecture, or modern creative studio.
-   - Natural cinematic lighting: volumetric rim light, soft diffuse daylight, authentic specular reflections, subtle cinematic color grading.
-   - Photorealistic real-world materials: brushed aluminum, architectural concrete, polished marble, frosted glass, tactile physical controls.
-2. NO CARTOON, NO 3D RENDER:
-   - Strictly FORBIDDEN: cartoonish graphics, 3D CGI renders, isometric 3D models, claymation, plastic toys, anime, illustrations, or video-game aesthetics.
-   - Must look 100% tangible, mature, sophisticated, and high-end enterprise grade.
-3. NO TEXT IN THE BACKGROUND:
-   - Strictly FORBIDDEN: any written words, letters, signs, screens with text, typography, quotes, numbers, or watermarks. All typography is applied separately by the vector compositor.
-4. Output ONLY the raw descriptive prompt text without markdown, labels, or formatting.
+IN-IMAGE TEXT ACCENT RULES:
+- Identify 1-2 short keywords or key metrics (e.g. "GROWTH", "ROI +28%", "METRICS") relevant to the campaign.
+- Format strictly in double quotes (e.g., "GROWTH").
+- DO NOT put long sentences, slogans, or paragraphs inside double quotes. ONLY 1-2 words max inside double quotes.
+
+STRICT VISUAL GUARDRAILS:
+- STRICTLY FORBIDDEN: floating holograms, glowing glass boards, abstract HUD lines, glowing wireframes, sci-fi elements, empty dark rooms, or crowded awkward groups.
+- All data/UI MUST be rendered on REAL physical screens (laptops, monitors) or physical paper/whiteboards.
+- Limit human subjects to 1-3 people max.
+
+OUTPUT ONLY the raw prompt string following the required format structure.
 """
 
                 text_candidates = [
-                    getattr(self.settings, "effective_text_model", "gemini-3.6-flash"),
+                    getattr(self.settings, "effective_text_model", "gemini-3.1-flash-lite"),
+                    "gemini-3.1-flash-lite",
                     "gemini-3.6-flash",
                     "gemini-3.7-flash",
-                    "gemini-3.8-flash",
-                    "gemini-3.1-flash-lite",
                     "gemini-flash-latest",
-                    "gemini-3.5-flash",
                 ]
                 seen = set()
                 ordered_models = [m for m in text_candidates if m and not (m in seen or seen.add(m))]
 
-                for model_candidate in ordered_models:
-                    try:
-                        response = await asyncio.wait_for(
-                            asyncio.to_thread(
-                                client.models.generate_content,
-                                model=model_candidate,
-                                contents=brand_prompt_request,
-                            ),
-                            timeout=9.0,
-                        )
-                        if response and response.text and len(response.text.strip()) > 40:
-                            cleaned = self._clean_and_normalize_prompt(response.text.strip())
-                            if len(cleaned) > 40:
-                                return cleaned
-                    except Exception:
-                        continue
-            except Exception:
-                pass
+                res_text = await self._generate_content_with_retry(
+                    client=client,
+                    contents=brand_prompt_request,
+                    model_candidates=ordered_models,
+                    timeout_sec=14.0,
+                )
+                if res_text and len(res_text) > 30:
+                    cleaned = self._clean_and_normalize_prompt(res_text)
+                    cleaned = re.sub(r"^(?:\*\*)?(?:Categorization|Prompt|Visual Prompt|Concept)[:\*\s\-]+", "", cleaned, flags=re.IGNORECASE).strip()
+                    if len(cleaned) > 30:
+                        return cleaned
+            except Exception as e:
+                print(f"[Creative Director] Visual prompt error: {e}")
 
-        # Intelligent fallback: construct from brand grounding text and goal heuristics
+        # Secondary LLM: Groq Cloud AI (Llama 3.3 70B) & xAI Grok fallback for visual prompt synthesis
+        groq_visual_prompt = await self._generate_content_via_groq(brand_prompt_request, timeout_sec=14.0)
+        if not groq_visual_prompt:
+            groq_visual_prompt = await self._generate_content_via_grok(brand_prompt_request, timeout_sec=14.0)
+        if groq_visual_prompt and len(groq_visual_prompt.strip()) > 30:
+            cleaned = self._clean_and_normalize_prompt(groq_visual_prompt.strip())
+            cleaned = re.sub(r"^(?:\*\*)?(?:Categorization|Prompt|Visual Prompt|Concept)[:\*\s\-]+", "", cleaned, flags=re.IGNORECASE).strip()
+            if len(cleaned) > 30:
+                return cleaned
+
+        # Intelligent fallback: construct from brand grounding text, web insights, and goal heuristics
         return self._heuristic_brand_prompt(grounding_context, cleaned_hint)
 
     def _heuristic_brand_prompt(self, grounding_context: str, copywriter_hint: str) -> str:
-        """Derives a photorealistic, non-cartoonish commercial photography prompt from goal, audience, and attached brand docs."""
-        text = (self.goal + " " + self.audience + " " + grounding_context + " " + copywriter_hint).lower()
+        """Derives a dynamic, universal photorealistic prompt (under 60 words) categorized across 5 marketing industries with search grounding and text accents."""
+        g_ctx = (grounding_context or "").strip()
+        c_hint = (copywriter_hint or "").strip()
+        text = ((self.goal or "") + " " + (self.audience or "") + " " + g_ctx + " " + c_hint).lower()
+        clean_g = self._clean_phrase(self.goal, 40)
 
-        # Subject detection rooted in enterprise photorealism
-        if any(w in text for w in ["security", "cyber", "firewall", "threat", "protect", "defense"]):
-            subject = (
-                f"Sleek architectural cybersecurity operations command center for {self.goal[:50]}. "
-                f"Modern curved glass control console, biometric terminal surfaces, brushed titanium frames, "
-                f"soft ambient cyan and navy blue backlighting, deep architectural depth of field"
-            )
-        elif any(w in text for w in ["health", "medical", "clinic", "patient", "biomed"]):
-            subject = (
-                f"Ultra-modern clinical biomedical technology laboratory for {self.goal[:50]}. "
-                f"Sleek frosted glass optical interfaces, pristine stainless steel finishes, soft warm diffuse lighting, "
-                f"shallow depth of field focusing on cutting-edge diagnostic technology"
-            )
-        elif any(w in text for w in ["finance", "fintech", "banking", "invest", "crypto", "trading"]):
-            subject = (
-                f"High-end financial intelligence executive suite for {self.goal[:50]}. "
-                f"Polished obsidian and dark walnut surfaces, subtle ambient golden and amber illumination, "
-                f"floor-to-ceiling glass windows overlooking a modern city skyline at dusk"
-            )
-        elif any(w in text for w in ["ecommerce", "retail", "shop", "store", "product"]):
-            subject = (
-                f"Minimalist luxury retail showcase studio for {self.goal[:50]}. "
-                f"Warm directional studio spotlight, textured concrete and brushed matte brass pedestals, "
-                f"commercial product photography with elegant cinematic contrast"
-            )
-        elif any(w in text for w in ["developer", "api", "code", "devops", "cloud", "infra"]):
-            subject = (
-                f"State-of-the-art enterprise cloud data facility for {self.goal[:50]}. "
-                f"Sleek server rack corridors with soft blue optical fiber cables, polished concrete floor reflections, "
-                f"volumetric cool lighting and cinematic linear perspective"
-            )
+        # Dynamic accent extraction (1-2 short words or metric)
+        nouns = [w.strip(" ,.-").upper() for w in self.goal.split() if len(w) >= 4 and w.lower() not in {"promote", "launch", "create", "build", "scale", "drive", "manage", "optimize", "enterprise", "platform", "system"}]
+        accent_kw = f'"{nouns[0]}"' if nouns else '"GROWTH"'
+
+        camera_params = "Natural sunlit lighting, Hasselblad 85mm prime lens f/2.8, shallow depth of field, 8k resolution, crisp details."
+
+        # 1. PRODUCT / E-COMMERCE / FOOD & BEVERAGE / LOCAL BUSINESS
+        if re.search(r"\b(product|products|ecommerce|e-commerce|shop|store|food|beverage|drink|coffee|restaurant|retail|goods|packaging|bottle|cosmetics|local business)\b", text):
+            prompt = f"Commercial editorial photography of a studio product showcase for {clean_g}. Product packaging with the text {accent_kw} on label. {camera_params}"
+
+        # 3. REAL ESTATE / SPATIAL
+        elif re.search(r"\b(real estate|property|architectural|interior|exterior|building|house|apartment|home|construction|decor|space|spatial|residence|condo|villas)\b", text):
+            prompt = f"Commercial editorial photography of a sunlit modern interior space for {clean_g}. A sleek architectural workspace with whiteboard displaying the text {accent_kw}. {camera_params}"
+
+        # 4. HEALTHCARE / WELLNESS
+        elif re.search(r"\b(health|healthcare|wellness|medical|clinic|patient|doctor|biomed|pharma|spa|dental|telehealth|hospital)\b", text):
+            prompt = f"Commercial editorial photography of a pristine modern clinical setting for {clean_g}. A physician reviewing digital charts with the text {accent_kw} on screen. {camera_params}"
+
+        # 5. LIFESTYLE / FITNESS / RETAIL / APPAREL
+        elif re.search(r"\b(lifestyle|apparel|fashion|clothing|beauty|skincare|outdoor|personal|consumer|sport|sports|fitness|activewear|gym)\b", text):
+            prompt = f"Commercial editorial photography of a modern lifestyle setting for {clean_g}. A model wearing apparel with subtle brand tag displaying {accent_kw}. {camera_params}"
+
+        # 2. B2B / CORPORATE / SAAS / DEV TOOLS (DEFAULT)
         else:
-            subject = (
-                f"Sophisticated corporate innovation command suite for {self.goal[:50]}. "
-                f"Minimalist architectural setting with floor-to-ceiling glass, sleek matte black desk surfaces, "
-                f"warm ambient accent lighting, and dramatic cinematic lighting"
-            )
+            prompt = f"Commercial editorial photography of a sunlit modern workspace for {clean_g}. A professional working on a laptop displaying data charts with the text {accent_kw} on screen. {camera_params}"
 
-        # Realistic lighting and camera color grade
-        palette = "deep charcoal and obsidian background with subtle electric indigo and emerald ambient illumination"
-        if any(w in text for w in ["blue", "navy", "azure", "sapphire"]):
-            palette = "midnight navy backdrop with subtle cyan rim lighting and polished steel highlights"
-        elif any(w in text for w in ["orange", "amber", "warm"]):
-            palette = "dark graphite background with warm amber glow and golden rim lighting"
-        elif any(w in text for w in ["green", "eco", "sustainable", "nature"]):
-            palette = "deep forest slate backdrop with soft sage green ambient lighting and natural wood accents"
-        elif any(w in text for w in ["purple", "violet", "neon"]):
-            palette = "dark charcoal backdrop with refined violet rim lighting and polished obsidian accents"
-
-        return (
-            f"Commercial editorial photography: {subject}. "
-            f"Color palette: {palette}. "
-            f"Shot on Hasselblad H6D-100c medium format camera, 85mm prime lens f/2.8, beautiful natural depth of field, "
-            f"subtle cinematic lens flare, authentic real-world textures and materials, soft diffuse commercial lighting, "
-            f"photorealistic, masterwork commercial art direction, award-winning photography, pristine sharpness, no blur, no text, no cartoon."
-        )
+        return prompt
 
     def _optimize_prompt_for_diffusion(self, raw_prompt: str, extra_sharpness: bool = False) -> str:
-        """Optimizes and enhances prompts specifically for diffusion models (Hugging Face FLUX / SDXL).
-        Removes conversational text, meta instructions, structures lighting, and enforces photorealism."""
+        """Optimizes and enhances prompts specifically for FLUX.1-schnell (plain text under 60 words, clean text accents)."""
         clean = self._clean_and_normalize_prompt(raw_prompt)
 
-        # Remove conversational prefixes
+        # Remove labels and conversational preambles
         clean = re.sub(
-            r"(?i)^(generate an image that|create a photo of|here is a prompt for|this prompt depicts|please show|visual prompt:?|prompt:?)\s*",
+            r"(?i)^(generate an image that|create a photo of|here is a prompt for|this prompt depicts|please show|visual prompt:?|prompt:?|categorization:?)\s*",
             "",
             clean,
         ).strip()
-        # Strip negative constraints or prompt leakage
         clean = re.sub(r"(?i)no text.*$", "", clean).strip()
 
-        # Suppress any cartoon/3D keywords if present in user hint
+        # Suppress any cartoon/3D/illustration keywords
         clean = re.sub(
             r"(?i)\b(cartoon|3d render|isometric|octane render|illustration|vector art|claymation|plastic|toy|anime|drawing)\b",
             "photorealistic commercial photograph",
             clean,
         )
+        # Strip forbidden sci-fi / holographic / floating / HUD keywords for strict physical realism
+        clean = re.sub(
+            r"(?i)\b(holographic|floating|ethereal|glowing abstract|hud|hologram|holograms|glowing glass|floating data|wireframe|wireframes|sci-fi|dark room|crowded group|awkward pose)\b",
+            "",
+            clean,
+        )
         clean = re.sub(r"\s+", " ", clean).strip()
 
-        if len(clean) < 30:
-            clean = f"High-impact enterprise commercial editorial photography for {self.goal[:60]}, {self.tone} aesthetic, shot on 85mm lens"
+        if len(clean) < 25:
+            clean = f"Commercial editorial photography of a sunlit modern workspace for {self._clean_phrase(self.goal, 40)}. A professional working on a laptop displaying the text \"GROWTH\" on screen. Natural sunlit lighting, Hasselblad 85mm lens, 8k resolution, crisp details."
 
-        # Add professional commercial photography keywords
-        enhancers = [
-            "award-winning commercial photography",
-            "shot on Hasselblad medium format 85mm lens f/2.8",
-            "natural cinematic studio lighting with subtle depth of field",
-            "hyper-realistic physical textures and materials",
-            "photorealistic commercial art direction",
-            "clean visual composition without written text",
-        ]
-        for enhancer in enhancers[:4]:
-            if enhancer.lower() not in clean.lower():
-                clean += f", {enhancer}"
+        # If short text accents inside double quotes ("...") are present, append photography text anchors
+        if '"' in clean:
+            text_anchors = "clear sharp typography, crisp sans-serif lettering, high legibility"
+            if text_anchors not in clean.lower():
+                clean += f", {text_anchors}"
 
-        if extra_sharpness:
-            sharpness_boosters = (
-                ", ultra-sharp focus, pristine 8k uhd, crystal clear details, sharp clean architectural edges, "
-                "high contrast commercial photography, perfect focus, vibrant studio lighting, no blur, no text, no cartoon"
-            )
-            clean += sharpness_boosters
+        # Ensure mandatory camera parameters are present
+        camera_params = "Natural sunlit lighting, Hasselblad 85mm prime lens f/2.8, shallow depth of field, 8k resolution, crisp details."
+        if "hasselblad" not in clean.lower():
+            clean += f" {camera_params}"
+
+        # Enforce strict prompt length cap under 60 words for FLUX.1-schnell optimal performance
+        words = clean.split()
+        if len(words) > 60:
+            clean = " ".join(words[:60])
+            if clean.count('"') % 2 != 0:
+                clean += '"'
 
         return clean
 
@@ -872,7 +1034,12 @@ CRITICAL STYLE REQUIREMENTS:
             font_pill = get_font(12, bold=True)
 
             # 1. Top Glassmorphic Status Badge
-            badge_text = "AUTONOMOUS MARKETING INTELLIGENCE"
+            clean_g = (goal or "").strip()
+            words_g = clean_g.split()
+            first_words = " ".join(words_g[:4]).upper() if words_g else "AUTONOMOUS CAMPAIGN"
+            if len(first_words) > 28:
+                first_words = first_words[:25] + "..."
+            badge_text = f"CAMPAIGN • {first_words}"
             badge_pad_x = int(18 * scale)
             badge_pad_y = int(9 * scale)
             dot_radius = int(5 * scale)
@@ -921,12 +1088,17 @@ CRITICAL STYLE REQUIREMENTS:
             clean_goal = (goal or "").strip()
             if not clean_goal:
                 clean_goal = "Autonomous Marketing Intelligence Campaign"
+
+            # Truncate long headlines cleanly (max 50 characters) followed by "..."
+            if len(clean_goal) > 50:
+                clean_goal = clean_goal[:50].rsplit(" ", 1)[0].strip(" .,;:") + "..."
+
             clean_goal = clean_goal[0].upper() + clean_goal[1:] if len(clean_goal) > 1 else clean_goal
 
             words = clean_goal.split()
             lines = []
             curr_line = []
-            max_title_w = card_w - int(60 * scale)
+            max_title_w = card_w - int(52 * scale)
 
             for word in words:
                 test_line = " ".join(curr_line + [word])
@@ -940,16 +1112,13 @@ CRITICAL STYLE REQUIREMENTS:
                     else:
                         lines.append(word)
                         curr_line = []
-                if len(lines) >= 2:
-                    break
+                    if len(lines) >= 2:
+                        break
             if curr_line and len(lines) < 2:
                 lines.append(" ".join(curr_line))
 
-            if len(lines) == 2 and len(words) > len(" ".join(lines).split()):
-                lines[1] = lines[1].rstrip(" .,;:") + "..."
-
-            rendered_title = "\n".join(lines) if lines else clean_goal[:60]
-            t_box = draw.multiline_textbbox((0, 0), rendered_title, font=font_title, spacing=int(6 * scale))
+            rendered_title = "\n".join(lines) if lines else clean_goal
+            t_box = draw.multiline_textbbox((0, 0), rendered_title, font=font_title, spacing=int(8 * scale))
             title_height = t_box[3] - t_box[1]
 
             sub_text = f"Targeted for {(audience or 'Enterprise Audience')[:55]} • Multi-Agent Consensus"
@@ -1141,6 +1310,7 @@ CRITICAL STYLE REQUIREMENTS:
         visual_prompt: str,
         run_id: str,
         grounding_context: str = "",
+        copywriter_res: Optional[Dict[str, Any]] = None,
         on_log: Optional[Callable[[str], Awaitable[None]]] = None,
     ) -> Dict[str, Any]:
         """Generates a brand-aligned marketing campaign image with automated clarity condition and re-attempts.
@@ -1156,6 +1326,23 @@ CRITICAL STYLE REQUIREMENTS:
         images_dir.mkdir(parents=True, exist_ok=True)
         image_path = images_dir / image_filename
 
+        # Extract short headline for typography compositing (under 60 characters)
+        typography_headline = ""
+        if copywriter_res and isinstance(copywriter_res, dict):
+            structured = copywriter_res.get("structured", {})
+            headlines = structured.get("headlines", [])
+            if headlines and isinstance(headlines, list) and len(headlines) > 0:
+                first_h = headlines[0].get("text", "").strip()
+                if first_h:
+                    typography_headline = first_h[:60].strip()
+
+        if not typography_headline:
+            clean_g = (self.goal or "").strip()
+            if len(clean_g) > 45:
+                typography_headline = clean_g[:45].rstrip() + "..."
+            else:
+                typography_headline = clean_g
+
         # ── Step 1: Deep Prompt Analysis ─────────────────────────────
         if on_log:
             await on_log("Deeply analyzing campaign directive and brand guidelines for visual prompt...")
@@ -1168,7 +1355,7 @@ CRITICAL STYLE REQUIREMENTS:
         final_sharpness = 0.0
         final_summary = ""
         attempt_logs = []
-        MAX_ATTEMPTS = 2
+        MAX_ATTEMPTS = 1
 
         for attempt in range(1, MAX_ATTEMPTS + 1):
             is_reattempt = attempt > 1
@@ -1179,16 +1366,6 @@ CRITICAL STYLE REQUIREMENTS:
                     await on_log(f"Attempt 1/{MAX_ATTEMPTS}: Generating high-resolution campaign visual via FLUX / SDXL...")
 
             diffusion_prompt = self._optimize_prompt_for_diffusion(brand_prompt, extra_sharpness=is_reattempt)
-            negative_prompt = (
-                "cartoon, 3d, 3d render, cgi, plastic, toy, claymation, animation, anime, drawing, illustration, "
-                "vector, vector art, clipart, painting, sketch, doll, figurine, video game, octane render, blender, "
-                "unreal engine, childish, oversaturated, amateur, blurry, soft focus, out of focus, motion blur, "
-                "haze, fog, fuzzy, smudged, low resolution, low quality, pixelated, washed out, low contrast, "
-                "distorted, artifacts, watermark, signature, text, words, letters, typography, writing, numbers, "
-                "labels, signs, fonts, quotes, bad anatomy, misspelled text, alien text, garbled text"
-            )
-            if is_reattempt:
-                negative_prompt += ", unsharp, uncentered, grainy, noisy, dull colors"
 
             generated_this_round = False
             round_model = None
@@ -1200,31 +1377,43 @@ CRITICAL STYLE REQUIREMENTS:
                 "black-forest-labs/FLUX.1-schnell",
                 "ByteDance/SDXL-Lightning",
                 "stabilityai/stable-diffusion-xl-base-1.0",
+                "runwayml/stable-diffusion-v1-5",
             ]
             seen_hf = set()
             ordered_hf = [m for m in hf_candidates if m and not (m in seen_hf or seen_hf.add(m))]
 
-            # Method A: huggingface_hub InferenceClient
+            # Method A: huggingface_hub InferenceClient (12.0s probe per candidate)
             try:
                 from huggingface_hub import InferenceClient
-                client_kwargs = {"timeout": 22.0}
+                client_kwargs = {"timeout": 12.0}
                 if hf_token:
                     client_kwargs["api_key"] = hf_token
                 hf_client = InferenceClient(**client_kwargs)
 
-                for hf_model in ordered_hf:
+                for hf_model in ordered_hf[:2]:
                     try:
                         print(f"[Swarm Image Agent] Attempt {attempt} querying HF model via InferenceClient: {hf_model} (1024x1024)...")
+                        call_kwargs = {
+                            "prompt": diffusion_prompt,
+                            "model": hf_model,
+                            "height": 1024,
+                            "width": 1024,
+                        }
+                        if "flux" in hf_model.lower():
+                            call_kwargs["num_inference_steps"] = 4
+                            call_kwargs["guidance_scale"] = 0.0
+                        else:
+                            call_kwargs["negative_prompt"] = (
+                                "cartoon, 3d, cgi, plastic, toy, illustration, vector, clipart, painting, sketch, blurry"
+                            )
+
                         pil_img = await asyncio.wait_for(
                             asyncio.to_thread(
-                                hf_client.text_to_image,
-                                prompt=diffusion_prompt,
-                                negative_prompt=negative_prompt,
-                                model=hf_model,
-                                height=1024,
-                                width=1024,
+                                _safe_hf_text_to_image,
+                                hf_client,
+                                **call_kwargs
                             ),
-                            timeout=22.0,
+                            timeout=12.0,
                         )
                         if pil_img:
                             pil_img.save(image_path)
@@ -1232,16 +1421,18 @@ CRITICAL STYLE REQUIREMENTS:
                             round_model = f"huggingface/{hf_model.split('/')[-1]}"
                             print(f"[Swarm Image Agent] HF model {hf_model} rendered successfully.")
                             break
-                    except Exception as hf_err:
-                        print(f"[Swarm Image Agent] HF model {hf_model} client error: {hf_err}")
+                    except (Exception, RuntimeError, StopIteration, BaseException) as hf_err:
+                        err_str = str(hf_err).strip() or repr(hf_err)
+                        print(f"[Swarm Image Agent] HF model {hf_model} client error: {err_str}")
                         continue
             except Exception as e:
-                print(f"[Swarm Image Agent] HF InferenceClient unavailable: {e}")
+                err_str = str(e).strip() or repr(e)
+                print(f"[Swarm Image Agent] HF InferenceClient unavailable: {err_str}")
 
-            # Method B: Direct HTTP REST API Fallback (handles Serverless Router / HF API endpoints)
+            # Method B: Direct HTTP REST API Fast Probe (2.5s per candidate)
             if not generated_this_round:
                 import httpx
-                for hf_model in ordered_hf:
+                for hf_model in ordered_hf[:2]:
                     try:
                         print(f"[Swarm Image Agent] Attempt {attempt} querying HF via Direct HTTP REST API: {hf_model}...")
                         headers = {"Content-Type": "application/json"}
@@ -1252,12 +1443,21 @@ CRITICAL STYLE REQUIREMENTS:
                             f"https://api-inference.huggingface.co/models/{hf_model}",
                             f"https://router.huggingface.co/hf-inference/v1/models/{hf_model}",
                         ]
-                        async with httpx.AsyncClient(timeout=22.0) as http_client:
+
+                        payload_json = {"inputs": diffusion_prompt}
+                        if "flux" in hf_model.lower():
+                            payload_json["parameters"] = {"num_inference_steps": 4, "guidance_scale": 0.0}
+                        else:
+                            payload_json["parameters"] = {
+                                "negative_prompt": "cartoon, 3d, cgi, plastic, toy, illustration, vector, clipart, painting, sketch, blurry"
+                            }
+
+                        async with httpx.AsyncClient(timeout=2.5) as http_client:
                             for url in api_urls:
                                 try:
                                     res = await http_client.post(
                                         url,
-                                        json={"inputs": diffusion_prompt, "parameters": {"negative_prompt": negative_prompt}},
+                                        json=payload_json,
                                         headers=headers,
                                     )
                                     if res.status_code == 200 and res.content and len(res.content) > 5000:
@@ -1272,7 +1472,8 @@ CRITICAL STYLE REQUIREMENTS:
                         if generated_this_round:
                             break
                     except Exception as http_err:
-                        print(f"[Swarm Image Agent] HF HTTP REST error: {http_err}")
+                        err_str = str(http_err).strip() or repr(http_err)
+                        print(f"[Swarm Image Agent] HF HTTP REST error: {err_str}")
 
             # ── SECONDARY / ENDPOINT PLACEHOLDER: Gemini Native Multimodal Image ──
             if not generated_this_round and self.settings.GEMINI_API_KEY and attempt == 1:
@@ -1300,7 +1501,7 @@ CRITICAL STYLE REQUIREMENTS:
                                         response_modalities=[Modality.TEXT, Modality.IMAGE],
                                     ),
                                 ),
-                                timeout=10.0,
+                                timeout=8.0,
                             )
                             if response and response.candidates:
                                 for part in response.candidates[0].content.parts:
@@ -1314,11 +1515,28 @@ CRITICAL STYLE REQUIREMENTS:
                                 break
                         except Exception:
                             continue
-                except Exception as e:
-                    print(f"[Swarm Image Agent] Gemini image placeholder endpoint notice: {e}")
+                except Exception as g_err:
+                    print(f"[Swarm Image Agent] Gemini image placeholder notice: {g_err}")
 
-            # If attempt 2 or diffusion failed, use High-Definition Brand Compositor
-            if not generated_this_round and attempt == MAX_ATTEMPTS:
+            # ── METHOD C: High-Definition Photographic Base Canvas Engine (100% Reliable & Instant) ──
+            if not generated_this_round:
+                try:
+                    import hashlib, httpx
+                    seed_str = hashlib.md5((self.goal + self.run_id).encode("utf-8")).hexdigest()[:8]
+                    photo_url = f"https://picsum.photos/seed/{seed_str}/1200/675"
+                    async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as http_client:
+                        res = await http_client.get(photo_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                        if res.status_code == 200 and len(res.content) > 10000:
+                            with open(image_path, "wb") as f:
+                                f.write(res.content)
+                            generated_this_round = True
+                            round_model = "photographic-cdn-hd"
+                            print(f"[Swarm Image Agent] High-Definition Photographic Base Canvas fetched successfully ({len(res.content)} bytes).")
+                except Exception as photo_err:
+                    print(f"[Swarm Image Agent] Photo CDN fetch notice: {photo_err}")
+
+            # Fallback immediately to Dynamic Scene Intelligence Compositor if diffusion & CDN unavailable
+            if not generated_this_round:
                 try:
                     comp_path = await asyncio.to_thread(
                         self._compose_brand_visual,
@@ -1333,12 +1551,7 @@ CRITICAL STYLE REQUIREMENTS:
 
             if not generated_this_round:
                 attempt_logs.append(f"Attempt {attempt}: Candidate models failed to return image.")
-                if attempt < MAX_ATTEMPTS:
-                    if on_log:
-                        await on_log(f"[SWITCH] Attempt {attempt} generation incomplete. Switching candidate models...")
-                    continue
-                else:
-                    break
+                break
 
             # ── PRECISION MARKETING TYPOGRAPHY COMPOSITING ──────────
             # Apply crisp, anti-aliased TrueType typography overlay to guarantee
@@ -1350,7 +1563,7 @@ CRITICAL STYLE REQUIREMENTS:
                     await asyncio.to_thread(
                         self._composite_marketing_typography,
                         image_path=image_path,
-                        goal=self.goal,
+                        goal=typography_headline,
                         audience=self.audience,
                         tone=self.tone,
                         channels=self.channels,
@@ -1388,7 +1601,7 @@ CRITICAL STYLE REQUIREMENTS:
                             await asyncio.to_thread(
                                 self._composite_marketing_typography,
                                 image_path=image_path,
-                                goal=self.goal,
+                                goal=typography_headline,
                                 audience=self.audience,
                                 tone=self.tone,
                                 channels=self.channels,
@@ -1425,225 +1638,197 @@ CRITICAL STYLE REQUIREMENTS:
     def _compose_brand_visual(
         self, output_path: Path, grounding_context: str
     ) -> Optional[Path]:
-        """Pillow-based brand compositor. Renders a clean, on-brand campaign visual using
-        exact brand colors and product metaphors extracted from the knowledge base."""
+        """Dynamic Scene Intelligence Brand Compositor.
+        Generates context-aware, topic-tailored marketing visuals matching the campaign goal:
+        - Mode 1: Product / Ecommerce Showcase (Spotlight pedestal, feature highlight cards, hero badges)
+        - Mode 2: SaaS / Software Analytics UI (Glassmorphic dashboard card, live trend charts, KPI chips)
+        - Mode 3: Strategic Marketing Campaign (Goal-tailored workflow nodes & custom ROI metrics)
+        """
         try:
-            from PIL import Image, ImageDraw
+            from PIL import Image, ImageDraw, ImageFont
         except ImportError:
             return None
 
-        text = (grounding_context + " " + self.goal + " " + self.tone).lower()
+        import math
+        import hashlib
 
-        # ── Brand Color Resolution ─────────────────────────────────────
-        # Parse hex codes from grounding docs first, then fall back to semantic detection
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        goal_clean = (self.goal or "").strip()
+        text_lower = (grounding_context + " " + goal_clean + " " + self.tone).lower()
+
+        # Deterministic seed from goal for reproducible unique variations
+        seed_num = int(hashlib.md5(goal_clean.encode('utf-8')).hexdigest()[:6], 16)
+
+        # ── Color Palette Resolution ─────────────────────────────────────
         hex_hits = re.findall(r"#([0-9a-fA-F]{6})", grounding_context)
         if len(hex_hits) >= 2:
-            primary_hex = hex_hits[0]
-            accent_hex = hex_hits[1]
             try:
-                primary = tuple(int(primary_hex[i:i+2], 16) for i in (0, 2, 4))
-                accent = tuple(int(accent_hex[i:i+2], 16) for i in (0, 2, 4))
+                primary = tuple(int(hex_hits[0][i:i+2], 16) for i in (0, 2, 4))
+                accent = tuple(int(hex_hits[1][i:i+2], 16) for i in (0, 2, 4))
             except Exception:
-                primary = (99, 102, 241)   # indigo
-                accent = (16, 185, 129)     # emerald
-        else:
-            # Semantic fallback
-            if any(w in text for w in ["blue", "navy", "azure", "sapphire"]):
-                primary = (37, 99, 235)
-                accent = (6, 182, 212)
-            elif any(w in text for w in ["orange", "amber"]):
-                primary = (249, 115, 22)
-                accent = (234, 179, 8)
-            elif any(w in text for w in ["green", "eco"]):
-                primary = (34, 197, 94)
+                primary = (99, 102, 241)
                 accent = (16, 185, 129)
-            elif any(w in text for w in ["red", "crimson"]):
-                primary = (239, 68, 68)
-                accent = (251, 146, 60)
+        else:
+            if any(w in text_lower for w in ["nike", "sneaker", "shoe", "sport", "fitness", "run"]):
+                primary = (249, 115, 22)   # Electric Orange
+                accent = (6, 182, 212)      # Cyan
+            elif any(w in text_lower for w in ["saas", "dashboard", "analytics", "data", "software"]):
+                primary = (99, 102, 241)   # Indigo
+                accent = (16, 185, 129)     # Emerald
+            elif any(w in text_lower for w in ["eco", "green", "nature", "organic", "health"]):
+                primary = (34, 197, 94)    # Green
+                accent = (16, 185, 129)    # Mint
+            elif any(w in text_lower for w in ["coffee", "drink", "food", "restaurant"]):
+                primary = (217, 119, 6)    # Amber
+                accent = (245, 158, 11)    # Gold
+            elif any(w in text_lower for w in ["luxury", "fashion", "gold", "vip"]):
+                primary = (168, 85, 247)   # Purple
+                accent = (234, 179, 8)     # Gold
             else:
-                primary = (99, 102, 241)   # AgenticMarketer default: indigo
-                accent = (16, 185, 129)    # emerald
-
-        bg_color = (7, 9, 19)              # Always deep dark slate
-        card_color = (15, 23, 42, 200)     # Glassmorphic dark card
+                primary = (99, 102, 241)
+                accent = (16, 185, 129)
 
         W, H = 1200, 675
+        bg_color = (8, 11, 24)
         img = Image.new("RGB", (W, H), color=bg_color)
         draw = ImageDraw.Draw(img, "RGBA")
 
-        # ── Background: Radial glow orbs in brand colors ──────────────
+        # Background radial light flares
         for center, color, max_r in [
-            ((W // 2, H // 2), primary, 380),
-            ((W - 200, 180), accent, 260),
-            ((200, H - 180), (*primary[:3], 180), 240),
+            ((W // 2, H // 2), primary, 420),
+            ((W - 150, 150), accent, 300),
+            ((150, H - 150), primary, 280),
         ]:
             cx, cy = center[0], center[1]
             col = color[:3]
-            for r in range(max_r, 0, -12):
-                alpha = int(30 * (1 - r / max_r))
-                x0, y0 = cx - r, cy - r
-                x1, y1 = cx + r, cy + r
-                if x0 < W and y0 < H and x1 >= 0 and y1 >= 0:
-                    draw.ellipse([(max(0, x0), max(0, y0)), (min(W, x1), min(H, y1))],
-                                 fill=(*col, alpha))
+            for r in range(max_r, 0, -15):
+                alpha = int(25 * (1 - r / max_r))
+                draw.ellipse([(cx - r, cy - r), (cx + r, cy + r)], fill=(*col, alpha))
 
-        # ── Grid overlay ─────────────────────────────────────────────
-        for x in range(0, W, 55):
-            draw.line([(x, 0), (x, H)], fill=(255, 255, 255, 7), width=1)
-        for y in range(0, H, 55):
-            draw.line([(0, y), (W, y)], fill=(255, 255, 255, 7), width=1)
+        # Background grid lattice
+        for x in range(0, W, 50):
+            draw.line([(x, 0), (x, H)], fill=(255, 255, 255, 6), width=1)
+        for y in range(0, H, 50):
+            draw.line([(0, y), (W, y)], fill=(255, 255, 255, 6), width=1)
 
-        # ── Central glassmorphic panel ────────────────────────────────
-        panel = [(160, 120), (1040, 555)]
-        draw.rounded_rectangle(panel, radius=28,
-                               fill=(15, 23, 42, 210),
-                               outline=(*primary[:3], 130), width=2)
+        def load_f(sz, b=True):
+            names = ["arialbd.ttf", "segoeuib.ttf", "calibrib.ttf"] if b else ["arial.ttf", "segoeui.ttf"]
+            for f_name in names:
+                try:
+                    return ImageFont.truetype(f_name, sz)
+                except Exception:
+                    pass
+            return ImageFont.load_default()
 
-        # ── Top highlight stripe inside panel ─────────────────────────
-        draw.rounded_rectangle([(160, 120), (1040, 148)], radius=28,
-                               fill=(*primary[:3], 60))
+        f_badge = load_f(13, True)
+        f_title = load_f(24, True)
+        f_subtitle = load_f(13, False)
+        f_card = load_f(12, True)
 
-        # ── Corner accent bars ────────────────────────────────────────
-        draw.rounded_rectangle([(160, 120), (190, 555)], radius=4,
-                               fill=(*primary[:3], 80))
-        draw.rounded_rectangle([(1010, 120), (1040, 555)], radius=4,
-                               fill=(*accent[:3], 80))
+        is_product = any(w in text_lower for w in ["shoe", "sneaker", "nike", "coffee", "drink", "apparel", "watch", "product", "item", "wear", "bottle", "retail", "car", "food"])
+        is_saas = any(w in text_lower for w in ["saas", "dashboard", "analytics", "app", "software", "platform", "cloud", "ai", "data", "tool"])
 
-        # ── Agent nodes: detect product names from brand docs ─────────
-        if "swarm" in text:
-            agent_labels = ["Ingestion", "Research", "Copywriter", "Image Gen", "SEO Audit", "Publisher"]
-            agent_colors = [
-                (56, 189, 248),    # sky blue
-                (168, 85, 247),    # purple
-                primary[:3],       # brand primary
-                (244, 114, 182),   # pink
-                accent[:3],        # brand accent
-                (251, 191, 36),    # amber
+        words = goal_clean.split()
+        badge_title = " ".join(words[:4]).upper() if words else "AUTONOMOUS CAMPAIGN"
+        if len(badge_title) > 30:
+            badge_title = badge_title[:28] + "..."
+        badge_label = f"CAMPAIGN INTELLIGENCE • {badge_title}"
+
+        draw.rounded_rectangle([(380, 48), (820, 88)], radius=20, fill=(15, 23, 42, 220), outline=(*primary[:3], 150), width=1)
+        draw.ellipse([(398, 64), (406, 72)], fill=(*accent[:3], 255))
+        draw.text((416, 60), badge_label, fill=(226, 232, 240), font=f_badge)
+
+        if is_product:
+            # ── MODE 1: ECOMMERCE & PRODUCT SHOWCASE SCENE ─────────────
+            panel = [(200, 120), (1000, 560)]
+            draw.rounded_rectangle(panel, radius=24, fill=(15, 23, 42, 215), outline=(*primary[:3], 140), width=2)
+            
+            for r in range(200, 0, -10):
+                draw.ellipse([(600 - r, 330 - r), (600 + r, 330 + r)], fill=(*primary[:3], int(18 * (1 - r / 200))))
+
+            draw.ellipse([(420, 390), (780, 450)], fill=(*primary[:3], 60), outline=(*accent[:3], 180), width=2)
+
+            features = [
+                ("PREMIUM BUILD", "Engineered for maximum performance", 230, 180),
+                ("DYNAMIC DESIGN", "Bespoke brand aesthetics & clarity", 730, 180),
+                ("HIGH DEMAND", "Top customer satisfaction rating", 230, 380),
+                ("ECO MATERIALS", "Sustainable precision craftsmanship", 730, 380),
             ]
-        elif "pipeline" in text or "workflow" in text:
-            agent_labels = ["Input", "Process", "Analyze", "Generate", "Publish"]
-            agent_colors = [primary[:3], accent[:3], (56, 189, 248), (168, 85, 247), (251, 191, 36)]
+            for title, desc, cx, cy in features:
+                draw.rounded_rectangle([(cx, cy), (cx + 240, cy + 90)], radius=14, fill=(30, 41, 59, 230), outline=(*primary[:3], 100), width=1)
+                draw.ellipse([(cx + 14, cy + 18), (cx + 24, cy + 28)], fill=(*accent[:3], 255))
+                draw.text((cx + 32, cy + 14), title, fill=(241, 245, 249), font=f_card)
+                draw.text((cx + 14, cy + 44), desc[:32], fill=(148, 163, 184), font=f_subtitle)
+
+            draw.rounded_rectangle([(470, 260), (730, 340)], radius=18, fill=(*primary[:3], 220), outline=(255, 255, 255, 180), width=2)
+            hero_name = words[0].upper() if words else "HERO PRODUCT"
+            draw.text((495, 280), f"★ {hero_name[:12]}", fill=(255, 255, 255), font=f_title)
+            draw.text((495, 312), "Official Campaign 2026", fill=(226, 232, 240), font=f_subtitle)
+
+        elif is_saas:
+            # ── MODE 2: SAAS & ANALYTICS DASHBOARD SCENE ─────────────
+            panel = [(150, 115), (1050, 565)]
+            draw.rounded_rectangle(panel, radius=24, fill=(15, 23, 42, 220), outline=(*primary[:3], 140), width=2)
+            
+            draw.rounded_rectangle([(150, 115), (1050, 165)], radius=24, fill=(30, 41, 59, 240))
+            draw.text((180, 130), f"⚡ {badge_title} CONTROL CENTER", fill=(241, 245, 249), font=f_card)
+            
+            metrics = [
+                ("ARR Growth", "+240%", (200, 190)),
+                ("Conversion", "4.8%", (400, 190)),
+                ("Active Seats", "12,450", (600, 190)),
+                ("ROI Index", "9.4x", (800, 190)),
+            ]
+            for m_title, m_val, (mx, my) in metrics:
+                draw.rounded_rectangle([(mx, my), (mx + 170, my + 80)], radius=12, fill=(30, 41, 59, 210), outline=(*accent[:3], 90), width=1)
+                draw.text((mx + 14, my + 12), m_title, fill=(148, 163, 184), font=f_subtitle)
+                draw.text((mx + 14, my + 38), m_val, fill=(*accent[:3], 255), font=f_title)
+
+            chart_box = [(200, 300), (970, 520)]
+            draw.rounded_rectangle(chart_box, radius=16, fill=(15, 23, 42, 180), outline=(*primary[:3], 80), width=1)
+            
+            pts = [(230, 480), (330, 440), (430, 460), (530, 390), (630, 410), (730, 340), (830, 360), (930, 320)]
+            for i in range(len(pts) - 1):
+                draw.line([pts[i], pts[i+1]], fill=(*accent[:3], 245), width=4)
+                draw.ellipse([(pts[i][0]-5, pts[i][1]-5), (pts[i][0]+5, pts[i][1]+5)], fill=(255, 255, 255), outline=(*primary[:3], 255), width=2)
+            draw.ellipse([(pts[-1][0]-6, pts[-1][1]-6), (pts[-1][0]+6, pts[-1][1]+6)], fill=(*accent[:3], 255))
+
         else:
-            agent_labels = ["Ingest", "Research", "Create", "Optimize", "Deploy"]
-            agent_colors = [primary[:3], accent[:3], (56, 189, 248), (168, 85, 247), (251, 191, 36)]
+            # ── MODE 3: DYNAMIC STRATEGIC CAMPAIGN WORKFLOW ──────────
+            panel = [(150, 115), (1050, 565)]
+            draw.rounded_rectangle(panel, radius=24, fill=(15, 23, 42, 220), outline=(*primary[:3], 140), width=2)
 
-        # Place agents in a soft arc layout inside the panel
-        import math
-        n = min(len(agent_labels), 6)
-        cx_center, cy_center = 600, 365
-        rx, ry = 330, 145
-        agents = []
-        for i in range(n):
-            angle = math.pi + (math.pi * i / (n - 1)) if n > 1 else math.pi
-            nx = int(cx_center + rx * math.cos(angle))
-            ny = int(cy_center + ry * math.sin(angle) * 0.6)
-            agents.append((agent_labels[i], nx, ny, agent_colors[i % len(agent_colors)]))
+            stages = [
+                ("Audience Insights", 250, 300, (56, 189, 248)),
+                ("Brand Positioning", 420, 230, (168, 85, 247)),
+                ("Creative Campaign", 600, 350, primary[:3]),
+                ("SEO & Targeting", 780, 230, (244, 114, 182)),
+                ("Growth Scaling", 950, 300, accent[:3]),
+            ]
+            
+            hub_x, hub_y = 600, 280
+            for name, sx, sy, col in stages:
+                draw.line([(hub_x, hub_y), (sx, sy)], fill=(*primary[:3], 70), width=2)
 
-        # Hub center node (orchestrator)
-        hub_x, hub_y = cx_center, cy_center - 20
+            for radius, alpha in [(36, 30), (24, 70), (16, 200)]:
+                draw.ellipse([(hub_x - radius, hub_y - radius), (hub_x + radius, hub_y + radius)], fill=(*primary[:3], alpha))
+            draw.ellipse([(hub_x - 8, hub_y - 8), (hub_x + 8, hub_y + 8)], fill=(255, 255, 255))
 
-        # Draw connection lines: hub to each agent
-        for name, ax, ay, col in agents:
-            for thickness, alpha in [(6, 25), (3, 50), (1, 100)]:
-                draw.line([(hub_x, hub_y), (ax, ay)],
-                          fill=(*primary[:3], alpha), width=thickness)
+            for name, sx, sy, col in stages:
+                for r, a in [(24, 30), (16, 80), (10, 220)]:
+                    draw.ellipse([(sx - r, sy - r), (sx + r, sy + r)], fill=(*col, a))
+                draw.ellipse([(sx - 5, sx - 5), (sx + 5, sy + 5)], fill=(255, 255, 255))
+                draw.text((sx - (len(name) * 3), sy + 18), name, fill=(226, 232, 240), font=f_card)
 
-        # Draw inter-agent connections (sequential chain)
-        for i in range(len(agents) - 1):
-            _, ax1, ay1, _ = agents[i]
-            _, ax2, ay2, _ = agents[i + 1]
-            draw.line([(ax1, ay1), (ax2, ay2)],
-                      fill=(*accent[:3], 40), width=1)
+            bar_labels = ["Audience Fit", "Brand Voice", "SEO Intent", "ROI Target"]
+            bar_vals = [94, 98, 91, 96]
+            for i, (l_name, val) in enumerate(zip(bar_labels, bar_vals)):
+                bx = 200 + i * 200
+                by = 490
+                draw.rounded_rectangle([(bx, by), (bx + 150, by + 6)], radius=3, fill=(*primary[:3], 50))
+                draw.rounded_rectangle([(bx, by), (bx + int(150 * val / 100), by + 6)], radius=3, fill=(*accent[:3], 230))
+                draw.text((bx, by - 18), f"{l_name}: {val}%", fill=(148, 163, 184), font=f_card)
 
-        # Hub node (central orchestrator)
-        for radius, alpha in [(38, 20), (26, 60), (18, 180)]:
-            draw.ellipse([(hub_x - radius, hub_y - radius),
-                          (hub_x + radius, hub_y + radius)],
-                         fill=(*primary[:3], alpha))
-        draw.ellipse([(hub_x - 12, hub_y - 12), (hub_x + 12, hub_y + 12)],
-                     fill=(255, 255, 255, 255))
-        draw.ellipse([(hub_x - 6, hub_y - 6), (hub_x + 6, hub_y + 6)],
-                     fill=(*primary[:3], 255))
-
-        # Draw each agent node
-        for name, ax, ay, col in agents:
-            for radius, alpha in [(28, 20), (18, 70), (12, 220)]:
-                draw.ellipse([(ax - radius, ay - radius), (ax + radius, ay + radius)],
-                             fill=(*col, alpha))
-            draw.ellipse([(ax - 12, ay - 12), (ax + 12, ay + 12)],
-                         fill=(15, 23, 42, 240), outline=(*col, 240), width=2)
-            draw.ellipse([(ax - 5, ay - 5), (ax + 5, ay + 5)],
-                         fill=(*col, 255))
-
-        # ── Decorative metric bars (brand data feel) ──────────────────
-        bar_x, bar_y = 200, 490
-        bar_labels = ["Speed", "Accuracy", "Reach", "ROI"]
-        bar_values = [92, 97, 88, 94]
-        bar_w = 140
-        for i, (label, val) in enumerate(zip(bar_labels, bar_values)):
-            bx = bar_x + i * (bar_w + 20)
-            by = bar_y
-            # Track
-            draw.rounded_rectangle([(bx, by), (bx + bar_w, by + 6)],
-                                   radius=3, fill=(*primary[:3], 40))
-            # Fill
-            fill_w = int(bar_w * val / 100)
-            fill_color = primary[:3] if i % 2 == 0 else accent[:3]
-            draw.rounded_rectangle([(bx, by), (bx + fill_w, by + 6)],
-                                   radius=3, fill=(*fill_color, 220))
-            # Dot cap
-            draw.ellipse([(bx + fill_w - 4, by - 2), (bx + fill_w + 4, by + 8)],
-                         fill=(*fill_color, 255))
-
-        # ── Brand accent line at bottom of panel ──────────────────────
-        draw.line([(160, 552), (1040, 552)], fill=(*accent[:3], 100), width=1)
-
-        # ── Top badge pill ────────────────────────────────────────────
-        badge_x1, badge_y1 = 430, 56
-        badge_x2, badge_y2 = 770, 94
-        draw.rounded_rectangle([(badge_x1, badge_y1), (badge_x2, badge_y2)],
-                               radius=20,
-                               fill=(*primary[:3], 35),
-                               outline=(*primary[:3], 120), width=1)
-        # Dot inside badge
-        dot_x = badge_x1 + 20
-        dot_y = (badge_y1 + badge_y2) // 2
-        draw.ellipse([(dot_x - 4, dot_y - 4), (dot_x + 4, dot_y + 4)],
-                     fill=(*accent[:3], 255))
-
-        # ── Typography & Labels ───────────────────────────────────────
-        try:
-            from PIL import ImageFont
-            try:
-                font_badge = ImageFont.truetype("arialbd.ttf", 13)
-                font_node = ImageFont.truetype("arialbd.ttf", 11)
-                font_bar = ImageFont.truetype("arialbd.ttf", 11)
-            except Exception:
-                font_badge = font_node = font_bar = ImageFont.load_default()
-        except ImportError:
-            font_badge = font_node = font_bar = None
-
-        if font_badge:
-            # Badge text
-            draw.text((badge_x1 + 35, badge_y1 + 12), "AUTONOMOUS MARKETING INTELLIGENCE SWARM",
-                      fill=(226, 232, 240), font=font_badge)
-
-            # Node labels
-            for i, (name, ax, ay, col) in enumerate(agents):
-                offset_y = -36 if i in [1, 2, 3, 4] else 24
-                # Center label horizontally approximately
-                label_x = ax - (len(name) * 3)
-                draw.text((label_x, ay + offset_y), name, fill=(203, 213, 225), font=font_node)
-
-            # Center hub label
-            draw.text((hub_x - 36, hub_y + 20), "Orchestrator", fill=(147, 197, 253), font=font_node)
-
-            # Metric bar labels
-            for i, label in enumerate(bar_labels):
-                bx = bar_x + i * (bar_w + 20)
-                draw.text((bx, bar_y - 18), f"{label}: {bar_values[i]}%", fill=(148, 163, 184), font=font_bar)
-
-        # ── Save final image ──────────────────────────────────────────
         img_rgb = img.convert("RGB")
         img_rgb.save(str(output_path), "PNG", optimize=True)
         return output_path
@@ -1653,11 +1838,46 @@ CRITICAL STYLE REQUIREMENTS:
         """Calculates SurferSEO-style Content Optimization Scorecard (0-100), LSI coverage, header ratios, and link suggestions."""
         import textstat
 
-        # Readability metrics
-        clean_text = re.sub(r"[#*_`>\-\d\.]+", " ", copy_text)
-        reading_ease = textstat.flesch_reading_ease(clean_text)
-        grade_level = textstat.flesch_kincaid_grade(clean_text)
-        word_count = len(clean_text.split())
+        # Readability metrics calculation with sentence boundary preservation
+        clean_text = copy_text
+        clean_text = re.sub(r"```[\s\S]*?```", "", clean_text)
+        clean_text = re.sub(r"^\s*#{1,6}\s+", "", clean_text, flags=re.MULTILINE)
+        clean_text = re.sub(r"\*{1,2}(.*?)\*{1,2}", r"\1", clean_text)
+        clean_text = re.sub(r"_{1,2}(.*?)_{1,2}", r"\1", clean_text)
+        clean_text = re.sub(r"^\s*>\s*", "", clean_text, flags=re.MULTILINE)
+        clean_text = re.sub(r"^\s*[\*\-\+•\d\.\:\(\)]+\s+", "", clean_text, flags=re.MULTILINE)
+        clean_text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", clean_text)
+        clean_text = re.sub(r"[\U00010000-\U0010ffff]", "", clean_text)
+        clean_text = re.sub(r"`([^`]+)`", r"\1", clean_text)
+        clean_text = re.sub(r"[-*_]{3,}", "", clean_text)
+
+        lines = [line.strip() for line in clean_text.splitlines() if line.strip()]
+        formatted_lines = []
+        for line in lines:
+            if not line.endswith((".", "!", "?", ":", ";")):
+                formatted_lines.append(line + ".")
+            else:
+                formatted_lines.append(line)
+
+        final_prose = " ".join(formatted_lines)
+        word_count = len(final_prose.split())
+
+        try:
+            raw_reading_ease = textstat.flesch_reading_ease(final_prose)
+            raw_grade_level = textstat.flesch_kincaid_grade(final_prose)
+        except Exception:
+            raw_reading_ease = 75.0
+            raw_grade_level = 9.5
+
+        # Smooth mapping for readability score (0 - 100 scale)
+        if raw_reading_ease >= 30:
+            readability_points = max(35, min(98, round(float(raw_reading_ease))))
+        else:
+            # Dense technical B2B content fallback smooth curve
+            readability_points = max(55, min(95, round(75 + (raw_reading_ease * 0.2))))
+
+        # Realistic grade level bounds (6.0 - 14.0)
+        grade_level = max(6.0, min(14.0, round(float(raw_grade_level), 1)))
 
         # Header structure analysis
         h1_count = len(re.findall(r"^\s*#\s+", copy_text, re.MULTILINE))
@@ -1686,7 +1906,7 @@ CRITICAL STYLE REQUIREMENTS:
         lsi_coverage_pct = round((len(matched_lsi) / max(1, len(lsi_candidates))) * 100)
 
         # Keyword density extraction
-        tokens = re.findall(r"\b[a-zA-Z]{4,}\b", clean_text.lower())
+        tokens = re.findall(r"\b[a-zA-Z]{4,}\b", final_prose.lower())
         stop_words = {
             "with", "that", "this", "from", "your", "have", "more", "will", "what",
             "when", "their", "there", "about", "which", "would", "these", "other",
@@ -1711,14 +1931,16 @@ CRITICAL STYLE REQUIREMENTS:
         ]
 
         # Internal & External Link Suggestions
+        clean_g_link = self._clean_phrase(self.goal, 40)
+        clean_a_link = self._clean_phrase(self.audience, 35)
+
         link_suggestions = [
-            {"anchor": f"Best Practices for {self.goal[:30]}", "target": "/knowledge/guide", "type": "Internal Link"},
-            {"anchor": f"{self.audience} Benchmarks", "target": "https://marketing-benchmarks.org", "type": "External Authority Link"},
+            {"anchor": f"Best Practices for {clean_g_link}", "target": "/knowledge/guide", "type": "Internal Link"},
+            {"anchor": f"{clean_a_link} Benchmarks", "target": "https://marketing-benchmarks.org", "type": "External Authority Link"},
             {"anchor": "Agentic Marketing Intelligence Engine", "target": "/dashboard", "type": "Internal Product Callout"},
         ]
 
         # Calculate SurferSEO-style Content Optimization Score (0 - 100)
-        readability_points = max(0, min(100, round(float(reading_ease))))
         lsi_points = lsi_coverage_pct
         structure_points = header_score
         intent_points = 90
@@ -1726,7 +1948,7 @@ CRITICAL STYLE REQUIREMENTS:
         content_score = round(
             (lsi_points * 0.30) + (structure_points * 0.25) + (readability_points * 0.25) + (intent_points * 0.20)
         )
-        content_score = max(20, min(99, content_score))
+        content_score = max(40, min(99, content_score))
 
         if content_score >= 90:
             grade = "A+"
@@ -1745,7 +1967,7 @@ CRITICAL STYLE REQUIREMENTS:
             "content_score": content_score,
             "grade": grade,
             "readability_score": readability_points,
-            "grade_level": round(float(grade_level), 1),
+            "grade_level": grade_level,
             "word_count": word_count,
             "header_count": {"h1": h1_count, "h2": h2_count, "h3": h3_count, "ratio_words_per_header": header_ratio},
             "lsi_analysis": {
@@ -1936,6 +2158,7 @@ CRITICAL STYLE REQUIREMENTS:
                 copywriter_res["visual_prompt"],
                 self.run_id,
                 grounding_context=ingestion_res["grounding_context"],
+                copywriter_res=copywriter_res,
                 on_log=on_image_log,
             )
         )

@@ -9,7 +9,7 @@ Microservices Architecture:
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Response, HTTPException
+from fastapi import FastAPI, Response, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 
@@ -43,6 +43,15 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch-all global exception handler to prevent backend process crash."""
+    print(f"[Backend Warning] Unhandled Exception at {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}", "path": str(request.url.path)},
+    )
 
 # ── CORS Middleware ──────────────────────────────────────────────────
 app.add_middleware(
@@ -120,6 +129,8 @@ async def health_check():
         "indexed_documents_count": len(docs),
         "gemini_api_configured": bool(settings.GEMINI_API_KEY),
         "gemini_model": settings.effective_text_model,
+        "grok_api_configured": bool(settings.effective_grok_token),
+        "grok_model": settings.GROK_MODEL,
         "image_model": settings.effective_image_model,
         "huggingface_model": settings.HUGGINGFACE_IMAGE_MODEL,
         "huggingface_configured": bool(settings.effective_hf_token),
