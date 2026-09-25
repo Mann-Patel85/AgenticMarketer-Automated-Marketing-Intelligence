@@ -66,8 +66,13 @@ export const deleteDocument = async (filename) => {
 };
 
 export const queryKnowledgeBase = async (query, topK = 4) => {
-    const res = await API.post('/rag/query', { query, top_k: topK });
-    return res.data;
+    try {
+        const res = await API.post('/rag/query', { query, top_k: topK });
+        return res.data;
+    } catch (err) {
+        console.warn('Backend /rag/query unreachable:', err?.message || err);
+        return { results: [], answer: 'Could not connect to vector store. Ensure backend is running.' };
+    }
 };
 
 // ── Swarm Orchestration ──────────────────────────────────────────

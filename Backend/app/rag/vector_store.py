@@ -69,6 +69,14 @@ class RAGVectorStore:
         with open(self.chunks_file, "w", encoding="utf-8") as f:
             json.dump(chunks, f, indent=2)
 
+    def sanitize_text(self, text: str) -> str:
+        """Clean up PDF character encoding artifacts, Unicode replacement chars, and whitespace."""
+        if not text:
+            return ""
+        text = text.replace("\ufffd", "'").replace("\x00", "")
+        text = re.sub(r"[ \t]+", " ", text)
+        return text.strip()
+
     # ── Document Parsers ─────────────────────────────────────────────
     def extract_text(self, file_path: Path, extension: str) -> str:
         """Extract plain text from PDF, DOCX, TXT, or MD documents."""
@@ -80,18 +88,19 @@ class RAGVectorStore:
                 reader = pypdf.PdfReader(f)
                 for page_num, page in enumerate(reader.pages):
                     page_text = page.extract_text() or ""
-                    if page_text.strip():
-                        text.append(f"--- Page {page_num + 1} ---\n{page_text}")
+                    cleaned = self.sanitize_text(page_text)
+                    if cleaned:
+                        text.append(f"--- Page {page_num + 1} ---\n{cleaned}")
             return "\n\n".join(text)
 
         elif ext == ".docx":
             doc = docx.Document(file_path)
-            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+            paragraphs = [self.sanitize_text(p.text) for p in doc.paragraphs if p.text.strip()]
             return "\n\n".join(paragraphs)
 
         elif ext in [".txt", ".md"]:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                return f.read()
+                return self.sanitize_text(f.read())
 
         else:
             raise ValueError(f"Unsupported document format: {extension}")
@@ -318,8 +327,79 @@ class RAGVectorStore:
         scored_chunks.sort(key=lambda x: x["score"], reverse=True)
         return scored_chunks[:top_k]
 
+    def synthesize_answer(self, query: str, top_chunks: List[Dict[str, Any]]) -> str:
+        """Synthesize a direct, professional AI answer based on retrieved vector chunks."""
+        if not top_chunks:
+            return "No relevant grounding documents found in vector memory for this query."
+
+        context_passages = "\n\n".join([
+            f"--- Document: {c.get('doc_name', 'Document')} (Chunk {c.get('chunk_index', 0)}) ---\n{c.get('text', '')}"
+            for c in top_chunks
+        ])
+
+        prompt = f"""You are an enterprise Brand & Marketing Intelligence AI assistant.
+Based STRICTLY on the grounding context provided below, synthesize a direct, clear, highly informative answer to the user's query.
+
+[User Query]:
+{query}
+
+[Grounding Documents Context]:
+{context_passages}
+
+Guidelines for your response:
+1. Provide a direct, professional, well-structured answer (use bullet points or markdown tables where appropriate).
+2. Highlight specific rules, guidelines, hex codes, or key takeaways mentioned in the documents.
+3. If the context does not fully answer the query, clearly state what information is available from the documents.
+"""
+        settings = get_settings()
+        # 1. Try Groq Cloud AI first for fast response
+        if settings.GROQ_API_KEY:
+            try:
+                import requests
+                headers = {
+                    "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": "openai/gpt-oss-120b",
+                    "messages": [
+                        {"role": "system", "content": "You are a precise enterprise RAG synthesis engine."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": 768
+                }
+                res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=8)
+                if res.status_code == 200:
+                    data = res.json()
+                    ans = data['choices'][0]['message']['content'].strip()
+                    if ans:
+                        return ans
+            except Exception:
+                pass
+
+        # 2. Try Gemini API as backup
+        if settings.GEMINI_API_KEY:
+            try:
+                from google import genai as gai
+                client = gai.Client(api_key=settings.GEMINI_API_KEY)
+                for m in ["models/gemini-3.8-flash", "models/gemini-flash-latest", "gemini-1.5-flash"]:
+                    try:
+                        res = client.models.generate_content(model=m, contents=prompt)
+                        if res and res.text:
+                            return res.text.strip()
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+        # 3. Fallback snippet
+        snippet = top_chunks[0].get("text", "")[:300]
+        return f"Based on indexed document ({top_chunks[0].get('doc_name')}):\n\n{snippet}..."
+
 
 # Singleton instance
 rag_store = RAGVectorStore()
+
 
 

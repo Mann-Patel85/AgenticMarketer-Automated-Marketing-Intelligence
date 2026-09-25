@@ -108,8 +108,19 @@ async def delete_document(doc_id: str):
     return {"success": True, "message": f"Document '{doc_id}' purged successfully."}
 
 
-@router.post("/query", response_model=List[RAGChunkResponse])
+class RAGQueryResponse(BaseModel):
+    query: str
+    answer: str
+    results: List[RAGChunkResponse]
+
+
+@router.post("/query", response_model=RAGQueryResponse)
 async def query_knowledge_base(payload: RAGQueryRequest):
-    """Query indexed documents for top semantic grounding chunks."""
+    """Query indexed documents for top semantic grounding chunks and synthesized AI answer."""
     results = rag_store.query_context(payload.query, top_k=payload.top_k or 4)
-    return [RAGChunkResponse(**r) for r in results]
+    answer = rag_store.synthesize_answer(payload.query, results)
+    return RAGQueryResponse(
+        query=payload.query,
+        answer=answer,
+        results=[RAGChunkResponse(**r) for r in results]
+    )

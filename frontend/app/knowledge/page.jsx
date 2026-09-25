@@ -57,6 +57,7 @@ export default function KnowledgePage() {
     const [expandedChunks, setExpandedChunks] = useState({});
     const [queryHistory, setQueryHistory] = useState([]);
     const [showHistory, setShowHistory] = useState(false);
+    const [synthesizedAnswer, setSynthesizedAnswer] = useState('');
 
     const loadDocuments = async () => {
         try {
@@ -166,7 +167,9 @@ export default function KnowledgePage() {
         try {
             const res = await queryKnowledgeBase(queryToRun, topK);
             const results = Array.isArray(res) ? res : (res?.results || []);
+            const answerText = Array.isArray(res) ? '' : (res?.answer || '');
             setQueryResults(results);
+            setSynthesizedAnswer(answerText);
             const latency = Math.round(getPerformanceNow() - startTime);
             setQueryLatencyMs(latency);
             setQueryHistory((prev) => {
@@ -691,7 +694,27 @@ export default function KnowledgePage() {
 
                             {/* Query Results */}
                             {!isQuerying && queryResults && (
-                                <div className="space-y-3 pt-1">
+                                <div className="space-y-4 pt-1">
+                                    {/* AI Synthesized Executive Answer Card */}
+                                    {synthesizedAnswer && (
+                                        <div className="p-5 bg-gradient-to-r from-indigo-950/80 via-slate-900 to-violet-950/80 border border-indigo-500/40 rounded-2xl space-y-3 shadow-xl shadow-indigo-950/40">
+                                            <div className="flex items-center justify-between border-b border-indigo-500/20 pb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
+                                                    <span className="text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-white to-violet-300 uppercase tracking-wider">
+                                                        AI Grounded Executive Answer
+                                                    </span>
+                                                </div>
+                                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                                    RAG Intelligence Engine
+                                                </span>
+                                            </div>
+                                            <div className="text-xs text-slate-200 leading-relaxed font-sans whitespace-pre-wrap">
+                                                {synthesizedAnswer}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="flex items-center justify-between">
                                         <p className="text-xs font-semibold text-white flex items-center gap-1.5">
                                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />

@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "d24edfaa-ec5a-4741-a834-20f47caba721",
+    "filename": "MotorolaStyleGuide.pdf",
+    "size_bytes": 14939972,
+    "size_formatted": "14.2 MB",
+    "chunk_count": 112,
+    "status": "ready",
+    "preview": "--- Page 1 ---\n02.06.2017\nMotorola toolkit \n06/17\n\n--- Page 2 ---\nMotorola toolkit 2\n02.06.2017\nSay \u2018hello\u2019 to the  \nMotorola toolkit.  \nThis Toolkit explains how \nto present our brand in a \ndifferentiated and stylish  \nway. By using the Toolkit to  \ndo this, we\u2019ll achieve greater \nconsistency and r...",
+    "created_at": "2026-09-25T17:03:10.865665+00:00"
+  }
+]
