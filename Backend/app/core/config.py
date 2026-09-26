@@ -24,14 +24,14 @@ class Settings(BaseSettings):
 
     # ── Google Gemini AI ─────────────────────────────────────────────
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
-    GEMINI_IMAGE_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_IMAGE_MODEL: str = "gemini-3-pro-image"
 
     @property
     def effective_text_model(self) -> str:
         """Returns valid text model identifier for Google GenAI SDK."""
         if not self.GEMINI_MODEL or "image" in self.GEMINI_MODEL.lower():
-            return "gemini-2.5-flash"
+            return "gemini-3.8-flash"
         return self.GEMINI_MODEL
 
     @property

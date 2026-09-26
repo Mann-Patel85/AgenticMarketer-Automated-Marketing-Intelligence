@@ -383,7 +383,17 @@ Guidelines for your response:
             try:
                 from google import genai as gai
                 client = gai.Client(api_key=settings.GEMINI_API_KEY)
-                for m in ["models/gemini-3.8-flash", "models/gemini-flash-latest", "gemini-1.5-flash"]:
+                for m in [
+                    "models/gemini-3.8-flash",
+                    "models/gemini-3.7-flash",
+                    "models/gemini-3.6-flash",
+                    "models/gemini-3.5-flash",
+                    "models/gemini-3.5-flash-lite",
+                    "models/gemini-3.1-flash-lite",
+                    "models/gemini-flash-latest",
+                    "gemini-3.8-flash",
+                    "gemini-3.6-flash",
+                ]:
                     try:
                         res = client.models.generate_content(model=m, contents=prompt)
                         if res and res.text:

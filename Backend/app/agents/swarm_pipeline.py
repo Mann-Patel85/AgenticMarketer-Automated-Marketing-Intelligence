@@ -427,11 +427,21 @@ Format your response clearly using the specified markdown headings.
                 client = gai.Client(api_key=self.settings.GEMINI_API_KEY)
                 
                 text_candidates = [
-                    getattr(self.settings, "effective_text_model", "gemini-3.1-flash-lite"),
-                    "gemini-3.1-flash-lite",
-                    "gemini-3.6-flash",
+                    getattr(self.settings, "effective_text_model", "gemini-3.8-flash"),
+                    "gemini-3.8-flash",
+                    "models/gemini-3.8-flash",
                     "gemini-3.7-flash",
+                    "models/gemini-3.7-flash",
+                    "gemini-3.6-flash",
+                    "models/gemini-3.6-flash",
+                    "gemini-3.5-flash",
+                    "models/gemini-3.5-flash",
+                    "gemini-3.5-flash-lite",
+                    "models/gemini-3.5-flash-lite",
+                    "gemini-3.1-flash-lite",
+                    "models/gemini-3.1-flash-lite",
                     "gemini-flash-latest",
+                    "models/gemini-flash-latest",
                 ]
                 seen = set()
                 ordered_models = [m for m in text_candidates if m and not (m in seen or seen.add(m))]
@@ -863,11 +873,21 @@ OUTPUT ONLY the raw prompt string following the required format structure.
 """
 
                 text_candidates = [
-                    getattr(self.settings, "effective_text_model", "gemini-3.1-flash-lite"),
-                    "gemini-3.1-flash-lite",
-                    "gemini-3.6-flash",
+                    getattr(self.settings, "effective_text_model", "gemini-3.8-flash"),
+                    "gemini-3.8-flash",
+                    "models/gemini-3.8-flash",
                     "gemini-3.7-flash",
+                    "models/gemini-3.7-flash",
+                    "gemini-3.6-flash",
+                    "models/gemini-3.6-flash",
+                    "gemini-3.5-flash",
+                    "models/gemini-3.5-flash",
+                    "gemini-3.5-flash-lite",
+                    "models/gemini-3.5-flash-lite",
+                    "gemini-3.1-flash-lite",
+                    "models/gemini-3.1-flash-lite",
                     "gemini-flash-latest",
+                    "models/gemini-flash-latest",
                 ]
                 seen = set()
                 ordered_models = [m for m in text_candidates if m and not (m in seen or seen.add(m))]

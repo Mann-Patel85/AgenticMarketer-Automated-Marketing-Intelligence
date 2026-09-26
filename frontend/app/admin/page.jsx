@@ -30,6 +30,7 @@ export default function AdminPage() {
     const [error, setError] = useState('');
     const [newCollab, setNewCollab] = useState({ name: '', email: '', role: 'marketer' });
     const [showInviteModal, setShowInviteModal] = useState(false);
+    const [selectedGeminiModel, setSelectedGeminiModel] = useState('gemini-3.8-flash');
 
     useEffect(() => {
         const loadAdminData = async () => {
@@ -184,15 +185,48 @@ export default function AdminPage() {
                                     <h2 className="text-sm font-bold text-white">Google Gemini Orchestrator</h2>
                                 </div>
                                 <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">
-                                    {health?.gemini_model || 'gemini-3.5-flash'}
+                                    {selectedGeminiModel || health?.gemini_model || 'gemini-3.8-flash'}
                                 </span>
                             </div>
 
                             <p className="text-xs text-slate-400">
-                                Powers the Copywriter Agent and Multimodal Image Generation Agent across all 6 autonomous pipelines.
+                                Powers the Copywriter Agent, RAG synthesis, and Multimodal Image Prompt Agent across all 6 autonomous pipelines.
                             </p>
 
                             <div className="space-y-2">
+                                <label className="text-[11px] font-medium text-slate-300">Supported & Active Gemini Models</label>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    {[
+                                        { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+                                        { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash' },
+                                        { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
+                                        { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+                                        { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
+                                        { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
+                                    ].map((m) => (
+                                        <button
+                                            key={m.id}
+                                            type="button"
+                                            onClick={() => setSelectedGeminiModel(m.id)}
+                                            className={`p-2 rounded-xl text-left border transition text-xs font-mono cursor-pointer ${
+                                                selectedGeminiModel === m.id || (health?.gemini_model === m.id && !selectedGeminiModel)
+                                                    ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-300 font-bold'
+                                                    : 'bg-slate-950/80 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[11px] font-sans font-semibold text-slate-200">{m.label}</span>
+                                                {(selectedGeminiModel === m.id || (!selectedGeminiModel && m.id === 'gemini-3.8-flash')) && (
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                                )}
+                                            </div>
+                                            <span className="text-[9px] text-slate-500">{m.id}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="space-y-2 pt-1">
                                 <label className="text-[11px] font-medium text-slate-300">Environment API Key Status</label>
                                 <div className="flex items-center gap-2">
                                     <div className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-300 flex items-center justify-between">

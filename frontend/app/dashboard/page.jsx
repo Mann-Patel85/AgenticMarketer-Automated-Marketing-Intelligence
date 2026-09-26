@@ -56,6 +56,7 @@ import {
     CheckCheck,
     ExternalLink,
     ArrowUpRight,
+    Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
