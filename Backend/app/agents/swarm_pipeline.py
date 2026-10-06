@@ -3,8 +3,8 @@ AgenticMarketer Backend — 6-Agent Swarm Orchestration Pipeline.
 Autonomous sequential workflow:
 1. Ingestion Agent (RAG Context Querying & Brand Guidelines Extraction)
 2. Market Research Agent (DuckDuckGo Search & Trend Extraction)
-3. Copywriter & Visual Agent (Gemini API Multi-Channel Copy & Visual Prompts)
-3.5. Brand Visual Prompt Agent (Gemini analyzes brand guidelines → precision image prompt)
+3. Copywriter & Visual Agent (Groq Cloud LPU Multi-Channel Copy & Visual Prompts)
+3.5. Brand Visual Prompt Agent (Groq LPU analyzes brand guidelines → precision image prompt)
 3.6. Image Generation Agent (Pollinations Flux + Pillow Brand Compositor guaranteed delivery)
 4. SEO & Analytics Agent (Textstat Readability & LSI Keyword Auditing)
 5. Social Publisher Agent (Channel Manifest Formatting & Omnichannel Payloads)
@@ -54,33 +54,6 @@ class SwarmPipeline:
 
     def _timestamp(self) -> str:
         return datetime.now(timezone.utc).strftime("%H:%M:%S")
-
-    async def _generate_content_with_retry(
-        self,
-        client: Any,
-        contents: Any,
-        model_candidates: List[str],
-        timeout_sec: float = 20.0,
-    ) -> Optional[str]:
-        """Calls Gemini API with instant zero-delay model rotation on any error or quota exhaustion."""
-        for model in model_candidates:
-            try:
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.models.generate_content,
-                        model=model,
-                        contents=contents,
-                    ),
-                    timeout=timeout_sec,
-                )
-                if response and response.text and len(response.text.strip()) > 20:
-                    print(f"[Swarm] Successfully generated campaign content via Gemini: {model}")
-                    return response.text.strip()
-            except Exception as err:
-                err_str = str(err)
-                print(f"[Swarm] Model '{model}' notice ({err_str[:100]}). Immediately trying next candidate...")
-                continue
-        return None
 
     async def _generate_content_via_grok(
         self,
@@ -260,11 +233,11 @@ class SwarmPipeline:
 
     # ── Agent 2: Market Research Agent ───────────────────────────────
     async def run_research_agent(self) -> Dict[str, Any]:
-        """Conducts live market intelligence search, SERP analysis, LSI terms extraction, and SEO Content Brief generation."""
-        clean_g_search = self._clean_phrase(self.goal, 50)
+        """Conducts live market intelligence search (news + SERP reports), LSI terms extraction, and SEO Content Brief generation."""
+        clean_g_search = self._clean_phrase(self.goal, 45)
         clean_a_search = self._clean_phrase(self.audience, 30)
-        search_query = f"{clean_g_search} trends marketing {clean_a_search}"
         search_results = []
+        news_results = []
 
         try:
             try:
@@ -272,41 +245,100 @@ class SwarmPipeline:
             except ImportError:
                 from duckduckgo_search import DDGS
 
-            def _fetch_ddgs():
+            def _fetch_live_intel():
+                n_items = []
+                t_items = []
                 with DDGS() as ddgs:
-                    return list(ddgs.text(search_query, max_results=5))
+                    # 1. Fetch live 2026 industry news
+                    try:
+                        n_items = list(ddgs.news(f"{clean_g_search} 2026", max_results=4))
+                    except Exception:
+                        try:
+                            n_items = list(ddgs.news(f"{clean_g_search} news", max_results=3))
+                        except Exception:
+                            n_items = []
 
-            results = await asyncio.wait_for(asyncio.to_thread(_fetch_ddgs), timeout=7.0)
-            for r in results:
-                search_results.append({
-                    "title": r.get("title", ""),
-                    "snippet": r.get("body", ""),
-                    "link": r.get("href", ""),
-                })
-        except Exception:
-            search_results = [
-                {
-                    "title": f"Current Market Trends in {self.audience}",
-                    "snippet": f"Leading competitors are doubling down on personalized AI-driven execution and proof-backed case studies.",
-                    "link": "https://industry-insights.internal",
-                },
-                {
-                    "title": f"Complete Guide to {self._clean_phrase(self.goal, 45)}",
-                    "snippet": "Top search results emphasize 5 core frameworks: intent research, automated content briefs, readability scoring, internal linking, and technical SEO hygiene.",
-                    "link": "https://marketing-playbook.internal",
-                }
-            ]
+                    # 2. Fetch authoritative market trends and benchmark reports
+                    try:
+                        t_items = list(ddgs.text(f"{clean_g_search} trends {clean_a_search} 2026", max_results=4))
+                    except Exception:
+                        try:
+                            t_items = list(ddgs.text(f"{clean_g_search} market trends", max_results=4))
+                        except Exception:
+                            t_items = []
+                return n_items, t_items
+
+            n_res, t_res = await asyncio.wait_for(asyncio.to_thread(_fetch_live_intel), timeout=7.0)
+            
+            for item in n_res:
+                if item.get("title") or item.get("body"):
+                    news_results.append({
+                        "title": item.get("title", "").strip(),
+                        "snippet": item.get("body", "").strip(),
+                        "date": item.get("date", "2026"),
+                        "link": item.get("url", item.get("href", "")),
+                    })
+            
+            for item in t_res:
+                if item.get("title") or item.get("body"):
+                    search_results.append({
+                        "title": item.get("title", "").strip(),
+                        "snippet": item.get("body", "").strip(),
+                        "link": item.get("href", ""),
+                    })
+        except Exception as ddg_err:
+            print(f"[Research Agent] Web search notice ({ddg_err}). Engaging dynamic intelligence fallback...")
+
+        # If live search returned minimal signals, enrich with Groq market research synthesis
+        groq_market_intel = ""
+        if len(news_results) + len(search_results) < 3:
+            groq_prompt = f"""You are a Principal Market Intelligence Analyst at a top-tier strategy firm.
+Analyze the following marketing initiative and target audience for 2026:
+CAMPAIGN GOAL: {self.goal}
+TARGET AUDIENCE: {self.audience}
+
+Provide 3 concrete, verified 2026 market developments:
+1. Latest Industry News / Macro Shifts (Specific events, technology disruptions, or regulatory shifts)
+2. Quantitative Benchmark Data (Specific metrics: average CAC, conversion rates, cycle length, or ROI multipliers)
+3. Acute Buyer Pain Points & Emerging Objections (Why legacy solutions fail in 2026)
+
+Format as concise, high-impact bullet points with concrete metrics and zero generic filler."""
+            groq_market_intel = await self._generate_content_via_groq(groq_prompt, timeout_sec=8.0) or ""
+
+        # Build comprehensive research context
+        intel_sections = []
+        if news_results:
+            intel_sections.append("=== 📰 RECENT MARKET NEWS & INDUSTRY DEVELOPMENTS (2026) ===")
+            for n in news_results:
+                date_str = f" [{n['date'][:10]}]" if n.get("date") else ""
+                intel_sections.append(f"• News{date_str}: {n['title']} — {n['snippet'][:280]}")
+
+        if search_results:
+            intel_sections.append("\n=== 📊 QUANTITATIVE INDUSTRY BENCHMARKS & SERP TRENDS ===")
+            for s in search_results:
+                intel_sections.append(f"• Report/Signal: {s['title']} — {s['snippet'][:280]}")
+
+        if groq_market_intel:
+            intel_sections.append("\n=== 🎯 STRATEGIC BUYER FRICTION & 2026 BENCHMARK INTELLIGENCE ===")
+            intel_sections.append(groq_market_intel.strip())
+
+        if not intel_sections:
+            intel_sections.append(f"• Market Analysis: 2026 benchmarks for {self.audience} indicate a 3.2x preference for proof-backed, intent-driven value over generic messaging.")
+
+        research_context = "\n".join(intel_sections)
 
         # Extract subheadings, questions (PAA), intent, and LSI terms
-        all_text = " ".join([r["title"] + " " + r["snippet"] for r in search_results])
+        all_text = " ".join([r.get("title", "") + " " + r.get("snippet", "") for r in (news_results + search_results)])
         words = re.findall(r"\b[a-zA-Z]{4,}\b", all_text.lower())
-        stop = {"with", "that", "this", "from", "your", "have", "more", "will", "what", "when", "their", "there", "about", "which", "would", "these", "other", "into", "first", "could", "after", "should", "where", "guide", "best", "top"}
+        stop = {"with", "that", "this", "from", "your", "have", "more", "will", "what", "when", "their", "there", "about", "which", "would", "these", "other", "into", "first", "could", "after", "should", "where", "guide", "best", "top", "news", "report"}
         freq = {}
         for w in words:
             if w not in stop:
                 freq[w] = freq.get(w, 0) + 1
 
         top_lsi = [k.capitalize() for k, v in sorted(freq.items(), key=lambda x: x[1], reverse=True)[:8]]
+        if not top_lsi:
+            top_lsi = [w.capitalize() for w in re.findall(r"\b[a-zA-Z]{4,}\b", self.goal) if w.lower() not in stop][:6]
 
         goal_lower = self.goal.lower()
         if any(w in goal_lower for w in ["buy", "pricing", "cost", "software", "tool", "platform", "agency"]):
@@ -318,18 +350,18 @@ class SwarmPipeline:
         aud_p30 = self._clean_phrase(self.audience, 30)
 
         paa_questions = [
-            f"What is the best strategy for {goal_p40}?",
-            f"How do top {aud_p30} optimize for {self._clean_phrase(self.goal, 35)}?",
-            f"What are key metrics to track when executing {goal_p40}?",
-            f"Why does {goal_p40} fail without technical SEO alignment?"
+            f"What is the most effective approach to {goal_p40} in 2026?",
+            f"How do leading {aud_p30} achieve predictable ROI with {goal_p40}?",
+            f"What key metrics and benchmarks should be tracked for {goal_p40}?",
+            f"Why do traditional tactics for {goal_p40} fail in today's market?"
         ]
 
         suggested_headings = [
-            f"Understanding {goal_p40}",
-            f"Core Framework for {aud_p30}",
-            f"Step-by-Step Execution Plan",
-            f"Key Optimization Metrics & Benchmarks",
-            f"Frequently Asked Questions"
+            f"The 2026 Landscape: Why {goal_p40} Has Changed",
+            f"Core Tactical Playbook for {aud_p30}",
+            f"Proven Framework & Step-by-Step Execution",
+            f"Key Optimization Metrics & Benchmark Outcomes",
+            f"Strategic Takeaways & Next Steps"
         ]
 
         seo_brief = {
@@ -339,19 +371,14 @@ class SwarmPipeline:
             "lsi_keywords": top_lsi,
             "people_also_ask": paa_questions,
             "suggested_headings": suggested_headings,
-            "serp_results_analyzed": len(search_results),
+            "serp_results_analyzed": len(news_results) + len(search_results),
         }
-
-        extracted_insights = [
-            f"• Trend: {r['title']} — {r['snippet'][:120]}..." for r in search_results if r.get('snippet')
-        ]
-        research_context = "\n".join(extracted_insights) if extracted_insights else "Standard market trends analyzed."
 
         return {
             "agent": "Market Research Agent",
             "status": "completed",
-            "query": search_query,
-            "results_count": len(search_results),
+            "query": f"{clean_g_search} 2026",
+            "results_count": len(news_results) + len(search_results),
             "insights": research_context,
             "seo_brief": seo_brief,
         }
@@ -360,7 +387,7 @@ class SwarmPipeline:
     async def run_copywriter_agent(
         self, grounding: str, research: str
     ) -> Dict[str, Any]:
-        """Leverages Gemini API (or intelligent synthesis) to create brand copy and visual prompts."""
+        """Leverages Groq LPU API (or intelligent synthesis) to create brand copy and visual prompts."""
         prompt = f"""
 You are an Elite Global Growth Marketer, Master Copywriter, and Omnichannel Campaign Strategist.
 CAMPAIGN GOAL: "{self.goal}"
@@ -373,97 +400,76 @@ GROUNDED BRAND GUIDELINES & ATTACHED FILES:
 LIVE MARKET INTELLIGENCE & SERP SIGNALS:
 {research}
 
-MANDATORY CAMPAIGN ACCURACY & QUALITY RULES:
-1. STRICT GOAL & AUDIENCE ALIGNMENT: Every headline, post, email, script, and prompt MUST specifically address the exact product, service, audience pain points, and objective described in the Campaign Goal and Grounded Brand Guidelines.
-2. NO GENERIC FLUFF: Do not write vague marketing platitudes. Cite concrete value mechanisms, tangible ROI outcomes, strategic insights, and relevant terminology tailored to {self.audience}.
-3. EVIDENCE-BASED MESSAGING: Incorporate specific proof points, frameworks (Problem-Agitate-Solve, Before-After-Bridge), and clear, frictionless Call-to-Actions (CTAs).
-4. MULTIMODAL INTEGRATION: Seamlessly align the visual prompt with the core message so imagery and copy form a unified, conversion-engineered campaign.
+MANDATORY CAMPAIGN ACCURACY, PRECISION & 2026 MARKET GROUNDING RULES:
+1. STRICT MARKET NEWS & BENCHMARK INTEGRATION: You MUST explicitly ground your copy in the real-world 2026 market signals, recent news developments, and quantitative benchmarks provided in the LIVE MARKET INTELLIGENCE section above. Cite specific numbers (e.g. CAC reductions, pipeline velocity uplifts, cycle length drops, adoption percentages) and reference real industry shifts so the copy feels razor-sharp, authentic, and timely.
+2. ZERO GENERIC FLUFF OR TIRED PLATITUDES: Do not write vague marketing claims (no "take your business to the next level", "unlock your potential", "in today's digital age"). Every headline, email, and script MUST cite tangible value mechanisms, real workflow friction points, and concrete ROI frameworks tailored specifically to {self.audience}.
+3. PSYCHOLOGICALLY ENGINEERED HOOK ARCHITECTURE (STRICTLY IN HOOKS SECTION ONLY): Under "### 🎯 Hook & Headline Variations", provide exactly 4 distinct, scroll-stopping hooks formatted as a numbered list with bold category labels:
+   1. **Contrarian Angle**: [A provocative counter-truth that exposes a flawed industry belief or outdated approach]
+   2. **Direct Value / ROI Angle**: [An outcome-driven hook leading with a concrete metric, time-to-value, or revenue impact]
+   3. **Data & Market News Angle**: [A timely hook citing a specific 2026 market shift, recent industry report, or benchmark stat]
+   4. **Curiosity Gap Angle**: [An irresistible hook revealing the unconventional mechanism top teams use without standard friction]
+4. HOOK ISOLATION ENFORCEMENT: Hooks must ONLY appear in the "### 🎯 Hook & Headline Variations" section. In ALL other sections (Universal Master Copy, LinkedIn Thought Leadership, X (Twitter) Thread, Reddit, Blog, Threads, Outbound Cold Email, Meta Ads, Video Scripts, Community Announcements), NEVER write "Hook", "**Hook:**", "Narrative Hook:", "Viral Hook:", "1/3 Hook & Problem:", or "Hook (0-3s):". Begin every other section directly with its natural, publication-ready copy!
+5. MULTIMODAL ALIGNMENT: Seamlessly align the visual prompt with the core campaign theme so imagery and copy form a unified, conversion-engineered asset.
 
 Produce a complete marketing bundle structured with these EXACT markdown headings (do not add numbers before ###):
 
 ### 🌟 Universal Master Copy (Post Anywhere)
-(A versatile, omni-platform master post with a high-impact hook, 3 core value pillars, concrete proof points, visual reference, and universal call-to-action suitable for any platform, site, blog, or community).
+(A versatile, omni-platform master post with an opening headline, 3 core value pillars, concrete proof points with real numbers, visual reference, and universal call-to-action suitable for any platform, site, blog, or community. Start directly with the copy — do NOT include any "Hook" label).
 
 ### 🎯 Hook & Headline Variations
-(3 high-converting angles: 1. Contrarian Angle, 2. Direct Value/ROI Angle, 3. Data & Proof Angle).
+(This is the ONLY section where hooks are allowed. Provide exactly 4 distinct, scroll-stopping hooks formatted as a numbered list with bold category labels):
+1. **Contrarian Angle**: (Provocative counter-truth challenging outdated playbooks)
+2. **Direct Value / ROI Angle**: (Concrete metric and measurable business outcome)
+3. **Data & Market News Angle**: (Timely hook directly citing 2026 market shifts and benchmark data)
+4. **Curiosity Gap Angle**: (Compelling angle on how top performers achieve this without common pitfalls)
 
 ### 💼 LinkedIn Thought Leadership
-(Structured B2B authority post with compelling narrative hook, 3-step tactical framework, industry insight, engagement question, CTA, and 4 relevant hashtags).
+(Structured B2B authority post starting directly with the opening narrative, 3-step tactical framework, industry insight with 2026 market report citation, engagement question, CTA, and 4 relevant hashtags. Start directly with the text — do NOT write "Hook" or "Narrative Hook").
 
 ### 🧵 X (Twitter) Thread
-(3-part viral thread: 1/3 Hook & Problem, 2/3 Tactical Solution & Framework, 3/3 Actionable CTA & Resource Offer).
+(3-part viral thread formatted with bold numbers:
+**1/3** [Opening problem statement with real benchmark metric]
+**2/3** [Tactical Solution & Framework]
+**3/3** [Actionable CTA & Resource Offer]. Do NOT write "Hook" or "Hook & Problem").
 
 ### 🤖 Reddit Community Discussion & Post
-(Authentic, non-promotional discussion post with an engaging title, real-world context for r/marketing or niche subreddit, and an open conversation starter).
+(Authentic, non-promotional discussion post with Title and body starting directly with real-world context for r/marketing or niche subreddit, and an open conversation starter).
 
 ### 📝 Blog Article (Medium / Dev.to / WordPress)
-(Full editorial guide with # Title, ## Introduction, ## 2 Core Tactical Pillars, ## Strategic Implementation, and ## Key Takeaways & Conclusion).
+(Full editorial guide with # Title, ## Introduction with 2026 market backdrop, ## 2 Core Tactical Pillars, ## Strategic Implementation, and ## Key Takeaways & Conclusion).
 
 ### 🧵 Meta Threads Microblog Post
-(Conversational, punchy micro-thread under 500 characters with an insightful hook and engagement question).
+(Conversational, punchy micro-thread under 500 characters starting directly with the observation and engagement question. No "Hook" label).
 
 ### 📧 B2B Outbound Cold Email
-(High-open subject line, personalized opener, 3-sentence value proposition under 120 words, and a low-friction 5-minute CTA).
+(Subject line, personalized opener, 3-sentence value proposition under 120 words with concrete ROI, and a low-friction 5-minute CTA).
 
 ### 📱 Meta / Facebook Ad Variant
-(Primary Text, Punchy Headline, and Meta Description formatted for high-CTR feed ads).
+(Primary Text, Punchy Headline, and Description formatted for high-CTR feed ads).
 
 ### 🎥 Short-Form Video & Reels Script (TikTok / Instagram / Shorts)
-(Hook [0-3s], Visual Scene Directions, Audio/Voiceover Script [30-45s], and High-Engagement Hashtags).
+(Visual Scene Directions, Audio/Voiceover Script [30-45s] citing real benchmarks, and High-Engagement Hashtags. Do NOT write "Hook" or "Hook (0-3s)").
 
 ### 💬 Community Broadcast Announcement (Discord / Slack)
 (Formatted broadcast card with title, feature/strategy highlights, and instant access link).
 
 ### 🎨 Multimodal Visual Generation Prompt
-(Detailed photorealistic creative photography directive fed to Image Generation Agent).
+(A comprehensive, creative-director grade visual specification structured as:
+**Hero Visual Directive**: [A rich, evocative 2-3 sentence photorealistic scene prompt engineered for modern diffusion models (FLUX.1 / Midjourney). Explicitly describe the focal subject, dynamic real-world action, tactile material textures, and architectural or studio environment tailored specifically to "{self.goal}". Lead with tangible visual storytelling—no generic stock cliches, no floating holograms, no fake CGI.]
+- **Scene & Subject**: [Specific personas (1-3 people max) or hero product staging, authentic engagement, natural body language, purposeful momentum.]
+- **Environment & Architecture**: [Tactile architectural setting, e.g. sunlit glass-partitioned corporate loft, industrial innovation lab, artisan studio, concrete & warm walnut accents.]
+- **Lighting & Atmosphere**: [Cinematic directional key light, warm amber rim lighting, soft diffuse shadows, volumetric daylight, 5200K daylight-balanced tone.]
+- **Camera & Optical Specs**: [Shot on Hasselblad H6D-100c medium format, 85mm f/1.4 prime lens, shallow depth of field, subtle Kodak Portra 400 film grain, crisp tactile micro-textures, 8k resolution.]
+- **Color Palette & Brand Aesthetics**: [Curated 3-tone color harmony aligned with the brand, e.g. deep obsidian slate (#0F172A), brushed titanium, warm honey amber.]
+- **Aspect Ratio**: 16:9 (Landscape for LinkedIn & Web) / 1:1 (Square for Feed Ads) / 9:16 (Stories/Reels)
+- **Negative Prompt Guardrails**: No uncanny plastic skin, no distorted fingers or hands, no floating sci-fi holograms, no glowing wireframes, no cluttered composition, no stiff corporate stock smiles.)
 
 Format your response clearly using the specified markdown headings.
 """
-        generated_copy = None
-
-        if self.settings.GEMINI_API_KEY:
-            try:
-                from google import genai as gai
-                client = gai.Client(api_key=self.settings.GEMINI_API_KEY)
-                
-                text_candidates = [
-                    getattr(self.settings, "effective_text_model", "gemini-3.8-flash"),
-                    "gemini-3.8-flash",
-                    "models/gemini-3.8-flash",
-                    "gemini-3.7-flash",
-                    "models/gemini-3.7-flash",
-                    "gemini-3.6-flash",
-                    "models/gemini-3.6-flash",
-                    "gemini-3.5-flash",
-                    "models/gemini-3.5-flash",
-                    "gemini-3.5-flash-lite",
-                    "models/gemini-3.5-flash-lite",
-                    "gemini-3.1-flash-lite",
-                    "models/gemini-3.1-flash-lite",
-                    "gemini-flash-latest",
-                    "models/gemini-flash-latest",
-                ]
-                seen = set()
-                ordered_models = [m for m in text_candidates if m and not (m in seen or seen.add(m))]
-
-                res_text = await self._generate_content_with_retry(
-                    client=client,
-                    contents=prompt,
-                    model_candidates=ordered_models,
-                    timeout_sec=18.0,
-                )
-                if res_text and len(res_text) > 40:
-                    generated_copy = res_text
-            except Exception as e:
-                print(f"[Swarm] Gemini copywriter client error: {e}")
-
-        # Secondary LLM: Groq Cloud AI (Llama 3.3 70B) & xAI Grok fallback / execution
+        # 1. Primary High-Speed LLM: Groq Cloud LPU
+        generated_copy = await self._generate_content_via_groq(prompt, timeout_sec=14.0)
         if not generated_copy:
-            groq_copy = await self._generate_content_via_groq(prompt, timeout_sec=14.0)
-            if not groq_copy:
-                groq_copy = await self._generate_content_via_grok(prompt, timeout_sec=14.0)
-            if groq_copy and len(groq_copy.strip()) > 40:
-                generated_copy = groq_copy.strip()
+            generated_copy = await self._generate_content_via_grok(prompt, timeout_sec=14.0)
 
         if not generated_copy:
             # Intelligent dynamic synthesis 100% tailored to the exact user goal, target audience, and tone
@@ -494,9 +500,10 @@ Whether you are scaling operations, reaching new customers, or optimizing perfor
 ---
 
 ### 🎯 Hook & Headline Variations
-1. **The Contrarian Angle**: "Why most {clean_aud} fail when implementing {clean_goal[:45]} — and how to fix it."
-2. **The High-Impact Solution**: "Transforming {clean_goal[:50]}: The strategic playbook built for {clean_aud}."
-3. **The Data-Driven Hook**: "Achieve 3.4x faster results with {clean_goal[:40]} using a grounded strategy."
+1. **Contrarian Angle**: "Why most {clean_aud} fail when implementing {clean_goal[:45]} — and how to fix it."
+2. **Direct Value / ROI Angle**: "Transforming {clean_goal[:50]}: The strategic playbook built for {clean_aud}."
+3. **Data & Market News Angle**: "Achieve 3.4x faster results with {clean_goal[:40]} using a grounded strategy."
+4. **Curiosity Gap Angle**: "The unconventional framework {clean_aud} use to scale {clean_goal[:35]} without standard friction."
 
 ---
 
@@ -585,9 +592,8 @@ Growth & Campaign Team
 ---
 
 ### 🎥 Short-Form Video & Reels Script (TikTok / Instagram)
-**Hook**: "If you're in {clean_aud}, stop scrolling — here's how to master {clean_goal[:40]} in 30 seconds."  
-**Visual**: Upbeat, modern workspace visual with dynamic text overlays.  
-**Voiceover**: "Step 1: Focus on acute buyer pain points. Step 2: Deliver clear value. Step 3: Automate execution."  
+**Visual Scene**: Modern, high-energy workspace visual with dynamic typography and motion graphics.  
+**Voiceover**: "If you're in {clean_aud}, here is the exact framework to scale {clean_goal[:40]} in under 30 seconds. Step 1: Target acute buyer friction. Step 2: Deliver immediate, tangible ROI. Step 3: Streamline multi-channel distribution."  
 **Hashtags**: #{clean_tag_aud} #{clean_tag_goal} #GrowthHacks #Reels
 
 ---
@@ -602,10 +608,13 @@ Check out the full campaign breakdown and copy assets in the channel files!
 ---
 
 ### 🎨 Multimodal Visual Generation Prompt
-**Prompt**: {visual_concept}
-- **Aspect Ratio**: 16:9 (Landscape for LinkedIn & Web) / 1:1 (Square for Feed Ads)
-- **Palette**: Commercial Studio Palette tailored to {clean_goal[:30]}
-- **Style**: Award-winning photorealistic commercial editorial photography
+**Hero Visual Directive**: {visual_concept}
+- **Scene & Subject**: Purposeful, authentic professional engagement tailored directly to {clean_aud}, featuring tactile textures and natural workplace momentum.
+- **Lighting & Atmosphere**: Warm directional key light, soft volumetric daylight, cinematic rim lighting, 5200K balanced color temperature.
+- **Camera & Optical Specs**: Photographed on Hasselblad H6D-100c medium format, 85mm f/1.4 prime lens, shallow depth of field, Kodak Portra 400 tonal science, crisp 8k texture clarity.
+- **Color Palette & Brand Aesthetics**: Commercial studio palette tailored to {clean_goal[:30]}, featuring deep obsidian slate, brushed titanium, and warm amber accents.
+- **Aspect Ratio**: 16:9 (Landscape for LinkedIn & Web) / 1:1 (Square for Feed Ads) / 9:16 (Stories/Reels)
+- **Negative Prompt Guardrails**: No uncanny CGI, plastic skin, distorted hands, floating sci-fi holograms, glowing wireframes, or stiff stock smiles.
 """
 
         # Extract visual prompt details
@@ -674,10 +683,41 @@ Check out the full campaign breakdown and copy assets in the channel files!
         campaign_title = strip_md(title_match.group(0)) if title_match else "B2B Marketing Campaign Intelligence"
         campaign_title = re.sub(r'^\d+[\.\:\-]\s*', '', campaign_title).strip()
 
+        def strip_stray_hooks(val: str) -> str:
+            if not val:
+                return ""
+            # Strip thread numbering + hook labels like "1/3 Hook & Problem:" or "1/3 **Hook & Problem**:"
+            val = re.sub(
+                r'(\b\d+/\d+\b)\s*(?:\*\*)?(?:Hook(?:\s*(?:&|and)\s*Problem)?|Problem)(?:\s*[\(\[][^)\]]*[\)\]])?(?:\*\*)?[:\s\*\-]+',
+                r'\1 ',
+                val,
+                flags=re.IGNORECASE
+            )
+            # Strip multiline hook prefixes like "\n**Hook:**", "Hook & Problem:", "Narrative Hook:"
+            val = re.sub(
+                r'(?m)^\s*(?:\*\*)?(?:Narrative\s+|Viral\s+|Video\s+|Opening\s+)?Hook(?:\s*(?:&|and)\s*Problem)?(?:\s*[\(\[][^)\]]*[\)\]])?(?:\*\*)?[:\s\*\-]+',
+                '',
+                val,
+                flags=re.IGNORECASE
+            )
+            val = re.sub(
+                r'^\s*(?:\*\*)?(?:Narrative\s+|Viral\s+|Video\s+|Opening\s+)?Hook(?:\s*(?:&|and)\s*Problem)?(?:\s*[\(\[][^)\]]*[\)\]])?(?:\*\*)?[:\s\*\-]+',
+                '',
+                val,
+                flags=re.IGNORECASE
+            )
+            return val.strip()
+
         chunks = re.split(r'\n(?:##|\#\#\#)\s+', text)
+        universal_body = ""
         headlines = []
         linkedin_body = ""
         twitter_tweets = []
+        reddit_data = {"title": "", "body": "", "subreddit": "marketing"}
+        blog_data = {"title": "", "body": ""}
+        threads_body = ""
+        reels_body = ""
+        community_body = ""
         email_data = {"subject": "", "body": ""}
         meta_data = {"primary": "", "headline": "", "description": ""}
         visual_prompt = ""
@@ -687,30 +727,121 @@ Check out the full campaign breakdown and copy assets in the channel files!
             header_line = lines[0].strip()
             body = '\n'.join(lines[1:]).strip()
 
-            if re.search(r'Hook|Headline', header_line, re.IGNORECASE):
-                for l in body.split('\n'):
-                    l_clean = l.strip()
-                    if not l_clean or l_clean.startswith('---'):
-                        continue
-                    opt_match = re.search(r'^(?:[\*\-\d\.\s]*)(Option\s*\d+(?:\s*\([^\)]+\))?|Variant\s*\d+)?[:\s\*\-]+(.*)$', l_clean)
-                    if opt_match and (opt_match.group(1) or len(headlines) < 3):
-                        lbl = opt_match.group(1) or f"Option {len(headlines)+1}"
-                        opt_body = opt_match.group(2) or l_clean
-                        clean_lbl = strip_md(lbl).strip(':* ')
-                        clean_body = strip_md(opt_body).strip(':* ')
-                        headlines.append({
-                            "id": len(headlines) + 1,
-                            "label": clean_lbl if clean_lbl else f"Option {len(headlines)+1}",
-                            "text": clean_body
-                        })
-                    elif headlines:
-                        headlines[-1]["text"] += " " + strip_md(l_clean)
+            if re.search(r'Universal|Post Anywhere|Common', header_line, re.IGNORECASE):
+                clean_body = strip_md(body)
+                if "---" in clean_body:
+                    clean_body = clean_body.split("---")[0].strip()
+                universal_body = strip_stray_hooks(clean_body)
+
+            elif re.search(r'Hook|Headline', header_line, re.IGNORECASE):
+                raw_lines = [l.strip() for l in body.split('\n') if l.strip() and not l.strip().startswith('---')]
+                
+                # 1. Check if markdown table format
+                table_lines = [l for l in raw_lines if l.startswith('|') and l.endswith('|')]
+                if len(table_lines) >= 2:
+                    for tl in table_lines:
+                        cols = [c.strip() for c in tl.strip('|').split('|')]
+                        if len(cols) >= 2:
+                            col1, col2 = cols[0], cols[1]
+                            if re.match(r'^[\s\-:]+$', col1) or re.match(r'^[\s\-:]+$', col2):
+                                continue
+                            if re.match(r'^(Angle|Type|Category|Label|Variant|Option|#)$', col1, re.I):
+                                continue
+                            clean_lbl = strip_md(col1).strip(':* ')
+                            clean_txt = strip_md(col2).strip(' *\"\'“”')
+                            if clean_txt and len(clean_txt) > 5:
+                                headlines.append({
+                                    "id": len(headlines) + 1,
+                                    "label": clean_lbl or f"Hook {len(headlines)+1}",
+                                    "text": clean_txt
+                                })
+
+                # 2. Numbered / Bulleted / Labeled format
+                if not headlines:
+                    for l in raw_lines:
+                        if re.match(r'^[\s\-:|]+$', l):
+                            continue
+                        
+                        bold_match = re.match(r'^(?:[\*\-\d\.\s\(\)]*?)\*\*([^\*:]+)\*\*[:\s\*\-]+(.*)$', l)
+                        if bold_match:
+                            clean_lbl = strip_md(bold_match.group(1)).strip(' :*#[]()')
+                            clean_txt = strip_md(bold_match.group(2)).strip(' *\"\'“”')
+                            if clean_txt and len(clean_txt) > 5:
+                                headlines.append({
+                                    "id": len(headlines) + 1,
+                                    "label": clean_lbl or f"Hook {len(headlines)+1}",
+                                    "text": clean_txt
+                                })
+                                continue
+
+                        colon_match = re.match(r'^(?:[\*\-\s\(\)]*?)(?:(\d+[\.\)])\s*)?([A-Za-z0-9\s/&\-\(\)]+?)[:\-]+(.*)$', l)
+                        if colon_match:
+                            raw_lbl = strip_md(colon_match.group(2)).strip(' :*#[]()')
+                            raw_txt = strip_md(colon_match.group(3)).strip(' *\"\'“”')
+                            if len(raw_lbl) <= 40 and raw_txt and len(raw_txt) > 5:
+                                headlines.append({
+                                    "id": len(headlines) + 1,
+                                    "label": raw_lbl or f"Hook {len(headlines)+1}",
+                                    "text": raw_txt
+                                })
+                                continue
+
+                        clean_l = strip_md(l).strip(' *\"\'“”-\t')
+                        if len(clean_l) > 10:
+                            headlines.append({
+                                "id": len(headlines) + 1,
+                                "label": f"Hook {len(headlines)+1}",
+                                "text": clean_l
+                            })
 
             elif re.search(r'LinkedIn', header_line, re.IGNORECASE):
                 clean_body = strip_md(body)
                 if "---" in clean_body:
                     clean_body = clean_body.split("---")[0].strip()
-                linkedin_body = clean_body
+                linkedin_body = strip_stray_hooks(clean_body)
+
+            elif re.search(r'Reddit', header_line, re.IGNORECASE):
+                clean_body = strip_md(body)
+                if "---" in clean_body:
+                    clean_body = clean_body.split("---")[0].strip()
+                t_match = re.search(r'^Title[:\s\*\-]+([^\n]+)', clean_body, re.IGNORECASE)
+                title = strip_md(t_match.group(1)).strip() if t_match else "Community Discussion & Strategy"
+                b_part = clean_body[t_match.end():].strip() if t_match else clean_body
+                reddit_data = {
+                    "title": strip_stray_hooks(title),
+                    "body": strip_stray_hooks(strip_md(b_part)) or clean_body,
+                    "subreddit": "marketing"
+                }
+
+            elif re.search(r'Blog|Medium|Dev\.to|WordPress|Article|Editorial', header_line, re.IGNORECASE):
+                clean_body = strip_md(body)
+                if "---" in clean_body:
+                    clean_body = clean_body.split("---")[0].strip()
+                t_match = re.search(r'^(?:#+\s*([^\n]+)|Title[:\s\*\-]+([^\n]+))', clean_body, re.IGNORECASE)
+                title = strip_md(t_match.group(1) or t_match.group(2)).strip() if t_match else "The Strategic Growth Guide"
+                b_part = clean_body[t_match.end():].strip() if t_match else clean_body
+                blog_data = {
+                    "title": strip_stray_hooks(title),
+                    "body": strip_stray_hooks(strip_md(b_part)) or clean_body
+                }
+
+            elif re.search(r'Threads', header_line, re.IGNORECASE):
+                clean_body = strip_md(body)
+                if "---" in clean_body:
+                    clean_body = clean_body.split("---")[0].strip()
+                threads_body = strip_stray_hooks(clean_body)
+
+            elif re.search(r'Video|Reels|TikTok|Short-Form', header_line, re.IGNORECASE):
+                clean_body = strip_md(body)
+                if "---" in clean_body:
+                    clean_body = clean_body.split("---")[0].strip()
+                reels_body = strip_stray_hooks(clean_body)
+
+            elif re.search(r'Community|Discord|Slack|Announcement', header_line, re.IGNORECASE):
+                clean_body = strip_md(body)
+                if "---" in clean_body:
+                    clean_body = clean_body.split("---")[0].strip()
+                community_body = strip_stray_hooks(clean_body)
 
             elif re.search(r'Twitter|X\s*/', header_line, re.IGNORECASE):
                 parts = re.split(r'(?:^|\n)\s*(?:\*\*)?(\d+/\d+)(?:\*\*)?\s*', body)
@@ -720,10 +851,11 @@ Check out the full campaign breakdown and copy assets in the channel files!
                         p_text = strip_md(parts[i+1]).strip() if i+1 < len(parts) else ""
                         if "---" in p_text:
                             p_text = p_text.split("---")[0].strip()
+                        p_text = strip_stray_hooks(p_text)
                         if p_text:
                             twitter_tweets.append({"part": p_num, "text": p_text})
                 else:
-                    twitter_tweets.append({"part": "1/1", "text": strip_md(body)})
+                    twitter_tweets.append({"part": "1/1", "text": strip_stray_hooks(strip_md(body))})
 
             elif re.search(r'Email', header_line, re.IGNORECASE):
                 subj_match = re.search(r'Subject(?:\s*Line)?[:\s\*\-]+([^\n]+)', body, re.IGNORECASE)
@@ -736,8 +868,8 @@ Check out the full campaign breakdown and copy assets in the channel files!
                 if "---" in body_part:
                     body_part = body_part.split("---")[0].strip()
                 email_data = {
-                    "subject": clean_subj,
-                    "body": strip_md(body_part)
+                    "subject": strip_stray_hooks(clean_subj),
+                    "body": strip_stray_hooks(strip_md(body_part))
                 }
 
             elif re.search(r'Meta|Facebook|Ad Variant', header_line, re.IGNORECASE):
@@ -745,9 +877,9 @@ Check out the full campaign breakdown and copy assets in the channel files!
                 h_match = re.search(r'Headline[:\s\*\-]+(.*?)(?=(?:Description|Primary|---|$))', body, re.DOTALL | re.IGNORECASE)
                 d_match = re.search(r'Description[:\s\*\-]+(.*?)(?=(?:Primary|Headline|---|$))', body, re.DOTALL | re.IGNORECASE)
                 meta_data = {
-                    "primary": strip_md(p_match.group(1).strip()) if p_match else "",
-                    "headline": strip_md(h_match.group(1).strip()) if h_match else "",
-                    "description": strip_md(d_match.group(1).strip()) if d_match else ""
+                    "primary": strip_stray_hooks(strip_md(p_match.group(1).strip())) if p_match else "",
+                    "headline": strip_stray_hooks(strip_md(h_match.group(1).strip())) if h_match else "",
+                    "description": strip_stray_hooks(strip_md(d_match.group(1).strip())) if d_match else ""
                 }
 
             elif re.search(r'Visual|Prompt', header_line, re.IGNORECASE):
@@ -756,9 +888,15 @@ Check out the full campaign breakdown and copy assets in the channel files!
 
         return {
             "title": campaign_title,
+            "universal": universal_body,
             "headlines": headlines,
             "linkedin": linkedin_body,
             "twitter": twitter_tweets,
+            "reddit": reddit_data,
+            "blog": blog_data,
+            "threads": threads_body,
+            "reels": reels_body,
+            "community": community_body,
             "email": email_data,
             "meta": meta_data,
             "visual_prompt": visual_prompt,
@@ -809,7 +947,7 @@ Check out the full campaign breakdown and copy assets in the channel files!
     async def _generate_brand_visual_prompt(
         self, grounding_context: str, copywriter_visual_prompt: str
     ) -> str:
-        """Autonomous Creative Director: Uses web search with a 2-second timeout and enforces Gemini prompt format structure under 60 words."""
+        """Autonomous Creative Director: Uses web search with a 2-second timeout and enforces Groq prompt format structure under 60 words."""
         cleaned_hint = self._clean_and_normalize_prompt(copywriter_visual_prompt)
         clean_subject = self._clean_phrase(self.goal, 45)
 
@@ -837,13 +975,8 @@ Check out the full campaign breakdown and copy assets in the channel files!
         if not brand_search_context:
             brand_search_context = f"Clean modern brand identity for {clean_subject}, high-conversion interface design."
 
-        # 2. Attempt Gemini-powered deep creative director prompt synthesis
-        if self.settings.GEMINI_API_KEY:
-            try:
-                from google import genai as gai
-                client = gai.Client(api_key=self.settings.GEMINI_API_KEY)
-
-                brand_prompt_request = f"""You are an Autonomous Creative Director & Commercial Advertising Photographer for photorealistic FLUX.1 campaigns.
+        # 2. High-speed Groq LPU visual prompt synthesis
+        brand_prompt_request = f"""You are an Award-Winning Creative Director & Commercial Advertising Photographer creating world-class prompts for photorealistic FLUX.1 and Midjourney campaigns.
 
 CAMPAIGN DIRECTIVE:
 Goal: {self.goal}
@@ -853,63 +986,27 @@ Brand Tone: {self.tone}
 GROUNDED BRAND GUIDELINES:
 {brand_search_context[:1000]}
 
+OBJECTIVE:
+Craft an evocative, photorealistic, cinematic commercial editorial image generation prompt (between 75 and 100 words) that tells a compelling visual story directly embodying "{self.goal}".
+
+REQUIRED ELEMENTS IN PROMPT:
+1. SPECIFIC SCENE & SUBJECT ACTION: Place 1-2 authentic, professional subjects (or premium product staging) in a meaningful, purposeful action directly relevant to {self.audience} and the campaign goal. Describe genuine body language, tactile engagement with real physical materials, and authentic emotion (no fake cheesy smiles).
+2. TACTILE ENVIRONMENT & ARCHITECTURE: Specify a textured physical setting (e.g. sunlit glass-partitioned corporate loft, industrial innovation lab, minimalist studio with warm walnut and concrete surfaces, panoramic city skyline).
+3. LIGHTING & ATMOSPHERE: Cinematic directional lighting (e.g. natural warm golden-hour daylight pouring through floor-to-ceiling windows, subtle amber rim light, soft fill, 5200K daylight balanced).
+4. CAMERA, OPTICS & COLOR SCIENCE: Hasselblad H6D-100c medium format camera, 85mm f/1.4 prime lens, shallow depth of field with soft creamy bokeh, Kodak Portra 400 color grading, crisp tactile micro-textures, 8k resolution.
+5. OPTIONAL ACCENT: If relevant, 1 short keyword/metric in double quotes (e.g. "GROWTH" or "+28%").
+
+STRICT GUARDRAILS:
+- STRICTLY FORBIDDEN: floating holograms, glowing glass boards, abstract HUD lines, glowing wireframes, sci-fi elements, dark empty rooms, crowded awkward groups, or plastic mannequin skin.
+- All data/UI MUST be on real physical screens (laptop, monitor, tablet) or physical paper/whiteboard.
+
 OUTPUT FORMAT MANDATE:
-Output ONLY the final image prompt string under 50 words without any commentary, labels (no "Categorization:", no "Prompt:"), markdown headers, or preambles.
-
-REQUIRED PROMPT FORMAT STRUCTURE:
-Commercial editorial photography of [subject/environment]. A [person/object] with [1-2 word in-image text accent in double quotes, e.g. "GROWTH"]. Natural sunlit lighting, Hasselblad 85mm lens, 8k resolution, crisp details.
-
-IN-IMAGE TEXT ACCENT RULES:
-- Identify 1-2 short keywords or key metrics (e.g. "GROWTH", "ROI +28%", "METRICS") relevant to the campaign.
-- Format strictly in double quotes (e.g., "GROWTH").
-- DO NOT put long sentences, slogans, or paragraphs inside double quotes. ONLY 1-2 words max inside double quotes.
-
-STRICT VISUAL GUARDRAILS:
-- STRICTLY FORBIDDEN: floating holograms, glowing glass boards, abstract HUD lines, glowing wireframes, sci-fi elements, empty dark rooms, or crowded awkward groups.
-- All data/UI MUST be rendered on REAL physical screens (laptops, monitors) or physical paper/whiteboards.
-- Limit human subjects to 1-3 people max.
-
-OUTPUT ONLY the raw prompt string following the required format structure.
+Output ONLY the final image prompt string (no markdown headers, no labels like 'Prompt:', no quotes around the whole response, no conversational preambles).
 """
 
-                text_candidates = [
-                    getattr(self.settings, "effective_text_model", "gemini-3.8-flash"),
-                    "gemini-3.8-flash",
-                    "models/gemini-3.8-flash",
-                    "gemini-3.7-flash",
-                    "models/gemini-3.7-flash",
-                    "gemini-3.6-flash",
-                    "models/gemini-3.6-flash",
-                    "gemini-3.5-flash",
-                    "models/gemini-3.5-flash",
-                    "gemini-3.5-flash-lite",
-                    "models/gemini-3.5-flash-lite",
-                    "gemini-3.1-flash-lite",
-                    "models/gemini-3.1-flash-lite",
-                    "gemini-flash-latest",
-                    "models/gemini-flash-latest",
-                ]
-                seen = set()
-                ordered_models = [m for m in text_candidates if m and not (m in seen or seen.add(m))]
-
-                res_text = await self._generate_content_with_retry(
-                    client=client,
-                    contents=brand_prompt_request,
-                    model_candidates=ordered_models,
-                    timeout_sec=14.0,
-                )
-                if res_text and len(res_text) > 30:
-                    cleaned = self._clean_and_normalize_prompt(res_text)
-                    cleaned = re.sub(r"^(?:\*\*)?(?:Categorization|Prompt|Visual Prompt|Concept)[:\*\s\-]+", "", cleaned, flags=re.IGNORECASE).strip()
-                    if len(cleaned) > 30:
-                        return cleaned
-            except Exception as e:
-                print(f"[Creative Director] Visual prompt error: {e}")
-
-        # Secondary LLM: Groq Cloud AI (Llama 3.3 70B) & xAI Grok fallback for visual prompt synthesis
-        groq_visual_prompt = await self._generate_content_via_groq(brand_prompt_request, timeout_sec=14.0)
+        groq_visual_prompt = await self._generate_content_via_groq(brand_prompt_request, timeout_sec=10.0)
         if not groq_visual_prompt:
-            groq_visual_prompt = await self._generate_content_via_grok(brand_prompt_request, timeout_sec=14.0)
+            groq_visual_prompt = await self._generate_content_via_grok(brand_prompt_request, timeout_sec=10.0)
         if groq_visual_prompt and len(groq_visual_prompt.strip()) > 30:
             cleaned = self._clean_and_normalize_prompt(groq_visual_prompt.strip())
             cleaned = re.sub(r"^(?:\*\*)?(?:Categorization|Prompt|Visual Prompt|Concept)[:\*\s\-]+", "", cleaned, flags=re.IGNORECASE).strip()
@@ -920,42 +1017,43 @@ OUTPUT ONLY the raw prompt string following the required format structure.
         return self._heuristic_brand_prompt(grounding_context, cleaned_hint)
 
     def _heuristic_brand_prompt(self, grounding_context: str, copywriter_hint: str) -> str:
-        """Derives a dynamic, universal photorealistic prompt (under 60 words) categorized across 5 marketing industries with search grounding and text accents."""
+        """Derives a dynamic, high-fidelity photorealistic prompt categorized across 5 marketing industries with search grounding and text accents."""
         g_ctx = (grounding_context or "").strip()
         c_hint = (copywriter_hint or "").strip()
         text = ((self.goal or "") + " " + (self.audience or "") + " " + g_ctx + " " + c_hint).lower()
-        clean_g = self._clean_phrase(self.goal, 40)
+        clean_g = self._clean_phrase(self.goal, 45)
+        clean_aud = self._clean_phrase(self.audience, 35)
 
         # Dynamic accent extraction (1-2 short words or metric)
         nouns = [w.strip(" ,.-").upper() for w in self.goal.split() if len(w) >= 4 and w.lower() not in {"promote", "launch", "create", "build", "scale", "drive", "manage", "optimize", "enterprise", "platform", "system"}]
         accent_kw = f'"{nouns[0]}"' if nouns else '"GROWTH"'
 
-        camera_params = "Natural sunlit lighting, Hasselblad 85mm prime lens f/2.8, shallow depth of field, 8k resolution, crisp details."
+        camera_params = "Natural warm directional daylight, subtle amber rim lighting, Hasselblad H6D-100c medium format, 85mm f/1.4 prime lens, shallow depth of field, Kodak Portra 400 color grading, crisp tactile micro-textures, 8k commercial resolution."
 
         # 1. PRODUCT / E-COMMERCE / FOOD & BEVERAGE / LOCAL BUSINESS
         if re.search(r"\b(product|products|ecommerce|e-commerce|shop|store|food|beverage|drink|coffee|restaurant|retail|goods|packaging|bottle|cosmetics|local business)\b", text):
-            prompt = f"Commercial editorial photography of a studio product showcase for {clean_g}. Product packaging with the text {accent_kw} on label. {camera_params}"
+            prompt = f"Commercial studio product photography for {clean_g}. Premium packaging showcase resting on a textured minimalist stone plinth with subtle botanical accents. Soft diffused directional softbox key light, warm amber rim highlights, high-contrast studio reflections, Hasselblad 85mm f/2.8 macro lens, razor-sharp label typography with {accent_kw}, 8k commercial editorial clarity."
 
         # 3. REAL ESTATE / SPATIAL
         elif re.search(r"\b(real estate|property|architectural|interior|exterior|building|house|apartment|home|construction|decor|space|spatial|residence|condo|villas)\b", text):
-            prompt = f"Commercial editorial photography of a sunlit modern interior space for {clean_g}. A sleek architectural workspace with whiteboard displaying the text {accent_kw}. {camera_params}"
+            prompt = f"Architectural Digest commercial interior photography for {clean_g}. Expansive sunlit architectural space featuring floor-to-ceiling panoramic glass, warm walnut surfaces, polished concrete, and modern designer furniture. Warm volumetric golden-hour sunlight casting soft geometric shadows, Phase One medium format 35mm f/2.8 lens, exceptional spatial depth, 8k resolution."
 
         # 4. HEALTHCARE / WELLNESS
         elif re.search(r"\b(health|healthcare|wellness|medical|clinic|patient|doctor|biomed|pharma|spa|dental|telehealth|hospital)\b", text):
-            prompt = f"Commercial editorial photography of a pristine modern clinical setting for {clean_g}. A physician reviewing digital charts with the text {accent_kw} on screen. {camera_params}"
+            prompt = f"Pristine documentary editorial photography for {clean_g}. Healthcare specialist in a sunlit modern clinical research facility analyzing patient diagnostic metrics on an ergonomic tablet. Soft diffuse architectural daylight, 5200K daylight-balanced illumination, Leica SL2 with 50mm f/1.4 Summilux lens, shallow depth of field, authentic candid posture, clean clinical aesthetic, 8k resolution."
 
         # 5. LIFESTYLE / FITNESS / RETAIL / APPAREL
         elif re.search(r"\b(lifestyle|apparel|fashion|clothing|beauty|skincare|outdoor|personal|consumer|sport|sports|fitness|activewear|gym)\b", text):
-            prompt = f"Commercial editorial photography of a modern lifestyle setting for {clean_g}. A model wearing apparel with subtle brand tag displaying {accent_kw}. {camera_params}"
+            prompt = f"High-fashion commercial editorial photography for {clean_g}. Authentic candid model engaged in dynamic purposeful motion in a sunlit urban architectural setting. Natural directional sunlight with warm ambient fill, 35mm cinematic film grain, Hasselblad 85mm f/1.8 prime lens, vibrant tactile fabric textures, crisp focal clarity, 8k commercial print quality."
 
         # 2. B2B / CORPORATE / SAAS / DEV TOOLS (DEFAULT)
         else:
-            prompt = f"Commercial editorial photography of a sunlit modern workspace for {clean_g}. A professional working on a laptop displaying data charts with the text {accent_kw} on screen. {camera_params}"
+            prompt = f"Award-winning commercial editorial photography of an executive strategy session for {clean_g}. A senior {clean_aud} collaborating over real-time enterprise workflow architecture on a sleek laptop display in a sunlit architectural glass loft with panoramic city skyline. {camera_params}"
 
         return prompt
 
     def _optimize_prompt_for_diffusion(self, raw_prompt: str, extra_sharpness: bool = False) -> str:
-        """Optimizes and enhances prompts specifically for FLUX.1-schnell (plain text under 60 words, clean text accents)."""
+        """Optimizes and enhances prompts specifically for FLUX.1-schnell and SDXL (up to 110 words, clean text accents)."""
         clean = self._clean_and_normalize_prompt(raw_prompt)
 
         # Remove labels and conversational preambles
@@ -981,7 +1079,7 @@ OUTPUT ONLY the raw prompt string following the required format structure.
         clean = re.sub(r"\s+", " ", clean).strip()
 
         if len(clean) < 25:
-            clean = f"Commercial editorial photography of a sunlit modern workspace for {self._clean_phrase(self.goal, 40)}. A professional working on a laptop displaying the text \"GROWTH\" on screen. Natural sunlit lighting, Hasselblad 85mm lens, 8k resolution, crisp details."
+            clean = f"Award-winning commercial editorial photography of a sunlit modern workspace for {self._clean_phrase(self.goal, 45)}. A professional working on a laptop displaying data architecture. Natural warm directional daylight, Hasselblad H6D-100c medium format, 85mm lens, 8k resolution, crisp details."
 
         # If short text accents inside double quotes ("...") are present, append photography text anchors
         if '"' in clean:
@@ -990,14 +1088,14 @@ OUTPUT ONLY the raw prompt string following the required format structure.
                 clean += f", {text_anchors}"
 
         # Ensure mandatory camera parameters are present
-        camera_params = "Natural sunlit lighting, Hasselblad 85mm prime lens f/2.8, shallow depth of field, 8k resolution, crisp details."
+        camera_params = "Natural warm lighting, Hasselblad 85mm prime lens f/1.4, shallow depth of field, 8k resolution, crisp details."
         if "hasselblad" not in clean.lower():
             clean += f" {camera_params}"
 
-        # Enforce strict prompt length cap under 60 words for FLUX.1-schnell optimal performance
+        # Enforce prompt length cap up to 110 words for FLUX.1 / SDXL optimal fidelity
         words = clean.split()
-        if len(words) > 60:
-            clean = " ".join(words[:60])
+        if len(words) > 110:
+            clean = " ".join(words[:110])
             if clean.count('"') % 2 != 0:
                 clean += '"'
 
@@ -1284,7 +1382,6 @@ OUTPUT ONLY the raw prompt string following the required format structure.
         3. Sharpness variance via edge gradient filtering (PIL ImageFilter.FIND_EDGES).
            Marketing standard: edge_variance >= 170.0 (or edge_variance >= 145.0 with edge_mean >= 3.4).
         4. Dynamic range / Contrast (luminance variance >= 80.0).
-        5. Gemini AI Multimodal Vision validation (if Gemini API key is configured).
         Returns: (is_valid, sharpness_score, diagnostic_summary)
         """
         try:
@@ -1495,56 +1592,34 @@ OUTPUT ONLY the raw prompt string following the required format structure.
                         err_str = str(http_err).strip() or repr(http_err)
                         print(f"[Swarm Image Agent] HF HTTP REST error: {err_str}")
 
-            # ── SECONDARY / ENDPOINT PLACEHOLDER: Gemini Native Multimodal Image ──
-            if not generated_this_round and self.settings.GEMINI_API_KEY and attempt == 1:
+
+            # ── METHOD C: Pollinations.ai FLUX.1 Engine (High-Fidelity Prompt-Grounded Diffusion) ──
+            if not generated_this_round:
                 try:
-                    from google import genai as gai
-                    from google.genai.types import GenerateContentConfig, Modality
-                    client = gai.Client(api_key=self.settings.GEMINI_API_KEY)
+                    import urllib.parse, hashlib, httpx
+                    clean_flux_prompt = self._clean_and_normalize_prompt(diffusion_prompt)
+                    encoded_prompt = urllib.parse.quote(clean_flux_prompt[:450])
+                    seed_val = int(hashlib.md5((self.goal + self.run_id).encode("utf-8")).hexdigest()[:6], 16) % 1000000
+                    pollinations_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1200&height=675&model=flux&nologo=true&seed={seed_val}"
+                    print(f"[Swarm Image Agent] Attempt {attempt} querying Pollinations FLUX.1 with enhanced prompt...")
+                    async with httpx.AsyncClient(timeout=14.0, follow_redirects=True) as http_client:
+                        res = await http_client.get(pollinations_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                        if res.status_code == 200 and len(res.content) > 10000:
+                            with open(image_path, "wb") as f:
+                                f.write(res.content)
+                            generated_this_round = True
+                            round_model = "pollinations/flux.1"
+                            print(f"[Swarm Image Agent] Pollinations FLUX.1 rendered successfully ({len(res.content)} bytes).")
+                except Exception as poll_err:
+                    print(f"[Swarm Image Agent] Pollinations FLUX fetch notice: {poll_err}")
 
-                    image_candidates = [
-                        getattr(self.settings, "effective_image_model", "gemini-3-pro-image"),
-                        "gemini-3-pro-image",
-                        "gemini-3.1-flash-image",
-                    ]
-                    seen = set()
-                    candidate_models = [m for m in image_candidates if m and not (m in seen or seen.add(m))]
-
-                    for model_candidate in candidate_models:
-                        try:
-                            response = await asyncio.wait_for(
-                                asyncio.to_thread(
-                                    client.models.generate_content,
-                                    model=model_candidate,
-                                    contents=brand_prompt,
-                                    config=GenerateContentConfig(
-                                        response_modalities=[Modality.TEXT, Modality.IMAGE],
-                                    ),
-                                ),
-                                timeout=8.0,
-                            )
-                            if response and response.candidates:
-                                for part in response.candidates[0].content.parts:
-                                    if hasattr(part, "inline_data") and part.inline_data:
-                                        with open(image_path, "wb") as f:
-                                            f.write(part.inline_data.data)
-                                        generated_this_round = True
-                                        round_model = model_candidate
-                                        break
-                            if generated_this_round:
-                                break
-                        except Exception:
-                            continue
-                except Exception as g_err:
-                    print(f"[Swarm Image Agent] Gemini image placeholder notice: {g_err}")
-
-            # ── METHOD C: High-Definition Photographic Base Canvas Engine (100% Reliable & Instant) ──
+            # ── METHOD D: High-Definition Photographic Base Canvas Engine (100% Reliable Fallback) ──
             if not generated_this_round:
                 try:
                     import hashlib, httpx
                     seed_str = hashlib.md5((self.goal + self.run_id).encode("utf-8")).hexdigest()[:8]
                     photo_url = f"https://picsum.photos/seed/{seed_str}/1200/675"
-                    async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as http_client:
+                    async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as http_client:
                         res = await http_client.get(photo_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
                         if res.status_code == 200 and len(res.content) > 10000:
                             with open(image_path, "wb") as f:
@@ -2139,7 +2214,7 @@ OUTPUT ONLY the raw prompt string following the required format structure.
         yield {
             "type": "log",
             "timestamp": self._timestamp(),
-            "message": f"[Copywriter Agent] Synthesizing multi-channel copy & multimodal visual prompts via Gemini API ({self.tone} tone)...",
+            "message": f"[Copywriter Agent] Synthesizing multi-channel copy & multimodal visual prompts via Groq LPU ({self.settings.GROQ_MODEL})...",
             "progress": 55,
         }
         copywriter_res = await self.run_copywriter_agent(

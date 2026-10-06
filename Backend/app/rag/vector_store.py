@@ -3,7 +3,7 @@ AgenticMarketer Backend — RAG Document Processing & Vector Store Engine.
 Handles:
 1. Multi-format parsing (.pdf, .docx, .txt, .md)
 2. Semantic chunking with configurable overlap
-3. Vector generation via Google Gemini Embedding API with local cosine fallback
+3. Instant deterministic vector generation
 4. Persistent indexing of documents and chunks
 """
 
@@ -163,22 +163,7 @@ class RAGVectorStore:
         return vec
 
     def generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding vector using Gemini API if available, else fast local vector."""
-        settings = get_settings()
-        if settings.GEMINI_API_KEY:
-            try:
-                from google import genai as gai
-                client = gai.Client(api_key=settings.GEMINI_API_KEY)
-                result = client.models.embed_content(
-                    model="gemini-embedding-001",
-                    contents=text[:2000],
-                )
-                if result and result.embeddings:
-                    return result.embeddings[0].values
-            except Exception:
-                # Fall back to local term vector
-                pass
-
+        """Generate high-speed local deterministic embedding vector for offline & online similarity."""
         return self._compute_fallback_vector(text)
 
     def _cosine_similarity(self, vec_a: List[float], vec_b: List[float]) -> float:
@@ -352,56 +337,33 @@ Guidelines for your response:
 3. If the context does not fully answer the query, clearly state what information is available from the documents.
 """
         settings = get_settings()
-        # 1. Try Groq Cloud AI first for fast response
-        if settings.GROQ_API_KEY:
-            try:
-                import requests
-                headers = {
-                    "Authorization": f"Bearer {settings.GROQ_API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": "openai/gpt-oss-120b",
-                    "messages": [
-                        {"role": "system", "content": "You are a precise enterprise RAG synthesis engine."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.2,
-                    "max_tokens": 768
-                }
-                res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=8)
-                if res.status_code == 200:
-                    data = res.json()
-                    ans = data['choices'][0]['message']['content'].strip()
-                    if ans:
-                        return ans
-            except Exception:
-                pass
-
-        # 2. Try Gemini API as backup
-        if settings.GEMINI_API_KEY:
-            try:
-                from google import genai as gai
-                client = gai.Client(api_key=settings.GEMINI_API_KEY)
-                for m in [
-                    "models/gemini-3.8-flash",
-                    "models/gemini-3.7-flash",
-                    "models/gemini-3.6-flash",
-                    "models/gemini-3.5-flash",
-                    "models/gemini-3.5-flash-lite",
-                    "models/gemini-3.1-flash-lite",
-                    "models/gemini-flash-latest",
-                    "gemini-3.8-flash",
-                    "gemini-3.6-flash",
-                ]:
-                    try:
-                        res = client.models.generate_content(model=m, contents=prompt)
-                        if res and res.text:
-                            return res.text.strip()
-                    except Exception:
-                        continue
-            except Exception:
-                pass
+        # 1. High-speed Groq LPU inference
+        groq_token = settings.effective_groq_token
+        if groq_token:
+            for model in [settings.GROQ_MODEL, "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
+                try:
+                    import requests
+                    headers = {
+                        "Authorization": f"Bearer {groq_token}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": "You are a precise enterprise RAG synthesis engine."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        "temperature": 0.2,
+                        "max_tokens": 768
+                    }
+                    res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=8)
+                    if res.status_code == 200:
+                        data = res.json()
+                        ans = data['choices'][0]['message']['content'].strip()
+                        if ans:
+                            return ans
+                except Exception:
+                    continue
 
         # 3. Fallback snippet
         snippet = top_chunks[0].get("text", "")[:300]

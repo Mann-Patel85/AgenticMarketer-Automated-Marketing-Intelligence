@@ -29,8 +29,7 @@ export default function AdminPage() {
     const [health, setHealth] = useState(null);
     const [error, setError] = useState('');
     const [newCollab, setNewCollab] = useState({ name: '', email: '', role: 'marketer' });
-    const [showInviteModal, setShowInviteModal] = useState(false);
-    const [selectedGeminiModel, setSelectedGeminiModel] = useState('gemini-3.8-flash');
+    const [selectedGroqModel, setSelectedGroqModel] = useState('openai/gpt-oss-120b');
 
     useEffect(() => {
         const loadAdminData = async () => {
@@ -119,12 +118,12 @@ export default function AdminPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="cyber-card rounded-2xl p-5 flex items-center justify-between">
                             <div>
-                                <p className="text-xs text-slate-400">Gemini 3 Quota</p>
+                                <p className="text-xs text-slate-400">Groq LPU Quota</p>
                                 <h3 className="text-xl font-extrabold text-white mt-1">
-                                    {stats?.gemini_tokens_used ? stats.gemini_tokens_used.toLocaleString() : '142,850'}
+                                    {stats?.groq_tokens_used ? stats.groq_tokens_used.toLocaleString() : '142,850'}
                                 </h3>
                                 <span className="text-[10px] text-emerald-400 font-medium">
-                                    {health?.gemini_api_configured ? 'Active & Configured' : 'Running Offline Mode'}
+                                    {health?.groq_api_configured ? 'Active & Blazing Fast' : 'Groq LPU Ready'}
                                 </span>
                             </div>
                             <div className="p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
@@ -181,42 +180,39 @@ export default function AdminPage() {
                         <div className="cyber-card rounded-3xl p-6 space-y-4">
                             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                                 <div className="flex items-center gap-2">
-                                    <Key className="w-4 h-4 text-indigo-400" />
-                                    <h2 className="text-sm font-bold text-white">Google Gemini Orchestrator</h2>
+                                    <Zap className="w-4 h-4 text-amber-400" />
+                                    <h2 className="text-sm font-bold text-white">Groq LPU High-Speed Orchestrator</h2>
                                 </div>
                                 <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">
-                                    {selectedGeminiModel || health?.gemini_model || 'gemini-3.8-flash'}
+                                    {selectedGroqModel || health?.groq_model || 'openai/gpt-oss-120b'}
                                 </span>
                             </div>
 
                             <p className="text-xs text-slate-400">
-                                Powers the Copywriter Agent, RAG synthesis, and Multimodal Image Prompt Agent across all 6 autonomous pipelines.
+                                Powers high-speed Copywriter Agent, RAG synthesis, and Visual Prompt generation on Groq LPUs at maximum throughput.
                             </p>
 
                             <div className="space-y-2">
-                                <label className="text-[11px] font-medium text-slate-300">Supported & Active Gemini Models</label>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                <label className="text-[11px] font-medium text-slate-300">Active Groq LPU Models</label>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                     {[
-                                        { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
-                                        { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash' },
-                                        { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
-                                        { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-                                        { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
-                                        { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
+                                        { id: 'openai/gpt-oss-120b', label: 'GPT OSS 120B (Flagship)' },
+                                        { id: 'openai/gpt-oss-20b', label: 'GPT OSS 20B (Ultra-Fast)' },
+                                        { id: 'qwen/qwen3.8-27b', label: 'Qwen 3.8 27B (High-Speed)' },
                                     ].map((m) => (
                                         <button
                                             key={m.id}
                                             type="button"
-                                            onClick={() => setSelectedGeminiModel(m.id)}
+                                            onClick={() => setSelectedGroqModel(m.id)}
                                             className={`p-2 rounded-xl text-left border transition text-xs font-mono cursor-pointer ${
-                                                selectedGeminiModel === m.id || (health?.gemini_model === m.id && !selectedGeminiModel)
-                                                    ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-300 font-bold'
+                                                selectedGroqModel === m.id || (health?.groq_model === m.id && !selectedGroqModel)
+                                                    ? 'bg-amber-600/20 border-amber-500/50 text-amber-300 font-bold'
                                                     : 'bg-slate-950/80 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                                             }`}
                                         >
                                             <div className="flex items-center justify-between">
                                                 <span className="text-[11px] font-sans font-semibold text-slate-200">{m.label}</span>
-                                                {(selectedGeminiModel === m.id || (!selectedGeminiModel && m.id === 'gemini-3.8-flash')) && (
+                                                {(selectedGroqModel === m.id || (!selectedGroqModel && m.id === 'openai/gpt-oss-120b')) && (
                                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                                                 )}
                                             </div>
@@ -230,14 +226,14 @@ export default function AdminPage() {
                                 <label className="text-[11px] font-medium text-slate-300">Environment API Key Status</label>
                                 <div className="flex items-center gap-2">
                                     <div className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-300 flex items-center justify-between">
-                                        <span>{health?.gemini_api_configured ? '•••••••••••••••••••••••• (Active in .env)' : 'No key detected in .env'}</span>
+                                        <span>{health?.groq_api_configured ? '•••••••••••••••••••••••• (Active in .env)' : 'No key detected in .env'}</span>
                                         <span className="text-emerald-400 text-[10px] font-semibold">
-                                            {health?.gemini_api_configured ? 'VALIDATED' : 'ACTION REQUIRED'}
+                                            {health?.groq_api_configured ? 'VALIDATED' : 'ACTION REQUIRED'}
                                         </span>
                                     </div>
                                 </div>
                                 <p className="text-[10px] text-slate-500">
-                                    Primary Key: <code className="text-indigo-400">GEMINI_API_KEY</code> in project root <code className="text-indigo-400">.env</code>.
+                                    Primary Key: <code className="text-amber-400">GROQ_API_KEY</code> in project root <code className="text-amber-400">.env</code>.
                                 </p>
                             </div>
 

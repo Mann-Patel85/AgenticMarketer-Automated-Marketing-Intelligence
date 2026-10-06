@@ -121,6 +121,14 @@ function parseMarketingBundle(rawText) {
     const metaData = { primary: '', headline: '', description: '' };
     let visualPrompt = '';
 
+    const stripStrayHooks = (val) => {
+        if (!val || typeof val !== 'string') return val;
+        let res = val.replace(/(\b\d+\/\d+\b)\s*(?:\*\*)?(?:Hook(?:\s*(?:&|and)\s*Problem)?|Problem)(?:\s*[\(\[][^)\]]*[\)\]])?(?:\*\*)?[:\s\*\-]+/gi, '$1 ');
+        res = res.replace(/(?:^|\n)\s*(?:\*\*)?(?:Narrative\s+|Viral\s+|Video\s+|Opening\s+)?Hook(?:\s*(?:&|and)\s*Problem)?(?:\s*[\(\[][^)\]]*[\)\]])?(?:\*\*)?[:\s\*\-]+/gi, '\n');
+        res = res.replace(/^\s*(?:\*\*)?(?:Narrative\s+|Viral\s+|Video\s+|Opening\s+)?Hook(?:\s*(?:&|and)\s*Problem)?(?:\s*[\(\[][^)\]]*[\)\]])?(?:\*\*)?[:\s\*\-]+/i, '');
+        return res.trim();
+    };
+
     for (const chunk of chunks) {
         const lines = chunk.split('\n');
         const headerLine = lines[0].trim();
@@ -129,30 +137,82 @@ function parseMarketingBundle(rawText) {
         if (/Universal|Post Anywhere|Common/i.test(headerLine)) {
             let cleanBody = strip(body);
             if (cleanBody.includes('---')) cleanBody = cleanBody.split('---')[0].trim();
-            universalBody = cleanBody;
+            universalBody = stripStrayHooks(cleanBody);
         } else if (/Hook|Headline/i.test(headerLine)) {
-            for (const l of body.split('\n')) {
-                const lClean = l.trim();
-                if (!lClean || lClean.startsWith('---')) continue;
-                const optMatch = lClean.match(/^(?:[\*\-\d\.\s]*)(Option\s*\d+(?:\s*\([^\)]+\))?|Variant\s*\d+)?[:\s\*\-]+(.*)$/i);
-                if (optMatch && (optMatch[1] || headlines.length < 3)) {
-                    const lbl = optMatch[1] || `Option ${headlines.length + 1}`;
-                    const optBody = optMatch[2] || lClean;
-                    const cleanLbl = strip(lbl).replace(/^[:*\s]+|[:*\s]+$/g, '');
-                    const cleanBody = strip(optBody).replace(/^[:*\s]+|[:*\s]+$/g, '');
-                    headlines.push({
-                        id: headlines.length + 1,
-                        label: cleanLbl || `Option ${headlines.length + 1}`,
-                        text: cleanBody,
-                    });
-                } else if (headlines.length > 0) {
-                    headlines[headlines.length - 1].text += ' ' + strip(lClean);
+            const rawLines = body.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('---'));
+
+            // 1. Check if markdown table format
+            const tableLines = rawLines.filter((l) => l.startsWith('|') && l.endsWith('|'));
+            if (tableLines.length >= 2) {
+                for (const tl of tableLines) {
+                    const cols = tl.replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+                    if (cols.length >= 2) {
+                        const col1 = cols[0];
+                        const col2 = cols[1];
+                        if (/^[\s\-:]+$/.test(col1) || /^[\s\-:]+$/.test(col2)) continue;
+                        if (/^(Angle|Type|Category|Label|Variant|Option|#)$/i.test(col1)) continue;
+                        const cleanLbl = strip(col1).replace(/^[:*\s]+|[:*\s]+$/g, '');
+                        const cleanTxt = strip(col2).replace(/^[“"'\s:*]+|[”"'\s:*]+$/g, '');
+                        if (cleanTxt && cleanTxt.length > 5) {
+                            headlines.push({
+                                id: headlines.length + 1,
+                                label: cleanLbl || `Hook ${headlines.length + 1}`,
+                                text: cleanTxt,
+                            });
+                        }
+                    }
+                }
+            }
+
+            // 2. Numbered / Bulleted / Labeled format
+            if (headlines.length === 0) {
+                for (const l of rawLines) {
+                    if (/^[\s\-:|]+$/.test(l)) continue;
+
+                    // Match 1. **Contrarian Angle**: "text"
+                    const boldMatch = l.match(/^(?:[\*\-\d\.\s\(\)]*?)\*\*([^\*:]+)\*\*[:\s\*\-]+(.*)$/);
+                    if (boldMatch) {
+                        const cleanLbl = strip(boldMatch[1]).replace(/^[:*\s]+|[:*\s]+$/g, '');
+                        const cleanTxt = strip(boldMatch[2]).replace(/^[“"'\s:*]+|[”"'\s:*]+$/g, '');
+                        if (cleanTxt && cleanTxt.length > 5) {
+                            headlines.push({
+                                id: headlines.length + 1,
+                                label: cleanLbl || `Hook ${headlines.length + 1}`,
+                                text: cleanTxt,
+                            });
+                            continue;
+                        }
+                    }
+
+                    // Match Option 1: "text" or Hook 1 (Contrarian): "text" or 1. Label: "text"
+                    const colonMatch = l.match(/^(?:[\*\-\s\(\)]*?)(?:(\d+[\.\)])\s*)?([A-Za-z0-9\s/&\-\(\)]+?)[:\-]+(.*)$/);
+                    if (colonMatch) {
+                        const rawLbl = strip(colonMatch[2]).replace(/^[:*\s]+|[:*\s]+$/g, '');
+                        const rawTxt = strip(colonMatch[3]).replace(/^[“"'\s:*]+|[”"'\s:*]+$/g, '');
+                        if (rawLbl.length <= 40 && rawTxt && rawTxt.length > 5) {
+                            headlines.push({
+                                id: headlines.length + 1,
+                                label: rawLbl || `Hook ${headlines.length + 1}`,
+                                text: rawTxt,
+                            });
+                            continue;
+                        }
+                    }
+
+                    const cleanLine = strip(l).replace(/^[“"'\s:*]+|[”"'\s:*]+$/g, '');
+                    if (cleanLine.length > 10) {
+                        headlines.push({
+                            id: headlines.length + 1,
+                            label: `Hook ${headlines.length + 1}`,
+                            text: cleanLine,
+                        });
+                    }
                 }
             }
         } else if (/LinkedIn/i.test(headerLine)) {
             let cleanBody = strip(body);
             if (cleanBody.includes('---')) cleanBody = cleanBody.split('---')[0].trim();
-            linkedinBody = cleanBody;
+            linkedinBody = stripStrayHooks(cleanBody);
         } else if (/Reddit/i.test(headerLine)) {
             let cleanBody = strip(body);
             if (cleanBody.includes('---')) cleanBody = cleanBody.split('---')[0].trim();
@@ -160,8 +220,8 @@ function parseMarketingBundle(rawText) {
             const title = tMatch ? strip(tMatch[1]) : 'Community Discussion & Strategy';
             const bPart = tMatch ? cleanBody.slice(tMatch[0].length).trim() : cleanBody;
             redditBody = {
-                title: title,
-                body: strip(bPart) || cleanBody,
+                title: stripStrayHooks(title),
+                body: stripStrayHooks(strip(bPart)) || cleanBody,
                 raw: cleanBody,
                 subreddit: 'marketing'
             };
@@ -172,22 +232,22 @@ function parseMarketingBundle(rawText) {
             const title = tMatch ? strip(tMatch[1] || tMatch[2]) : 'The Strategic Growth Guide';
             const bPart = tMatch ? cleanBody.slice(tMatch[0].length).trim() : cleanBody;
             blogBody = {
-                title: title,
-                body: strip(bPart) || cleanBody,
+                title: stripStrayHooks(title),
+                body: stripStrayHooks(strip(bPart)) || cleanBody,
                 raw: cleanBody
             };
         } else if (/Threads/i.test(headerLine)) {
             let cleanBody = strip(body);
             if (cleanBody.includes('---')) cleanBody = cleanBody.split('---')[0].trim();
-            threadsBody = cleanBody;
+            threadsBody = stripStrayHooks(cleanBody);
         } else if (/Video|Reels|TikTok|Short-Form/i.test(headerLine)) {
             let cleanBody = strip(body);
             if (cleanBody.includes('---')) cleanBody = cleanBody.split('---')[0].trim();
-            reelsBody = cleanBody;
+            reelsBody = stripStrayHooks(cleanBody);
         } else if (/Community|Discord|Slack|Announcement/i.test(headerLine)) {
             let cleanBody = strip(body);
             if (cleanBody.includes('---')) cleanBody = cleanBody.split('---')[0].trim();
-            communityBody = cleanBody;
+            communityBody = stripStrayHooks(cleanBody);
         } else if (/Twitter|X\s*\//i.test(headerLine)) {
             const parts = body.split(/(?:^|\n)\s*(?:\*\*)?(\d+\/\d+)(?:\*\*)?\s*/);
             if (parts.length > 1) {
@@ -197,12 +257,13 @@ function parseMarketingBundle(rawText) {
                     if (pText.includes('---')) {
                         pText = pText.split('---')[0].trim();
                     }
+                    pText = stripStrayHooks(pText);
                     if (pText) {
                         twitterTweets.push({ part: pNum, text: pText });
                     }
                 }
             } else {
-                twitterTweets.push({ part: '1/1', text: strip(body) });
+                twitterTweets.push({ part: '1/1', text: stripStrayHooks(strip(body)) });
             }
         } else if (/Email/i.test(headerLine)) {
             const subjMatch = body.match(/Subject(?:\s*Line)?[:\s\*\-]+([^\n]+)/i);
@@ -215,15 +276,15 @@ function parseMarketingBundle(rawText) {
             if (bodyPart.includes('---')) {
                 bodyPart = bodyPart.split('---')[0].trim();
             }
-            emailData.subject = subject;
-            emailData.body = strip(bodyPart);
+            emailData.subject = stripStrayHooks(subject);
+            emailData.body = stripStrayHooks(strip(bodyPart));
         } else if (/Meta|Facebook|Ad Variant/i.test(headerLine)) {
             const pMatch = body.match(/Primary(?:\s*Text)?[:\s\*\-]+(.*?)(?=(?:Headline|Description|---|$))/is);
             const hMatch = body.match(/Headline[:\s\*\-]+(.*?)(?=(?:Description|Primary|---|$))/is);
             const dMatch = body.match(/Description[:\s\*\-]+(.*?)(?=(?:Primary|Headline|---|$))/is);
-            metaData.primary = pMatch ? strip(pMatch[1]) : '';
-            metaData.headline = hMatch ? strip(hMatch[1]) : '';
-            metaData.description = dMatch ? strip(dMatch[1]) : '';
+            metaData.primary = stripStrayHooks(pMatch ? strip(pMatch[1]) : '');
+            metaData.headline = stripStrayHooks(hMatch ? strip(hMatch[1]) : '');
+            metaData.description = stripStrayHooks(dMatch ? strip(dMatch[1]) : '');
         } else if (/Visual|Prompt/i.test(headerLine)) {
             const pText = body.replace(/^(?:>\s*)?(?:\*\*)?Prompt[:\*\s\-]+/i, '').trim();
             visualPrompt = strip(pText);
@@ -529,22 +590,22 @@ export default function DashboardPage() {
         {
             id: 'copywriter',
             name: 'Copywriter Agent',
-            role: 'Gemini 3 Copy Engine',
+            role: 'Groq LPU Copy Engine',
             icon: PenTool,
             color: 'from-amber-500 to-orange-500',
             borderColor: 'border-amber-500/30',
             textColor: 'text-amber-400',
-            description: 'Synthesizes high-converting copy angles and campaign bundles with Gemini 3 Flash.',
+            description: 'Synthesizes high-converting copy angles and campaign bundles with Groq LPUs at maximum throughput.',
         },
         {
             id: 'image_gen',
             name: 'Image Generation Agent',
-            role: 'Gemini / Hugging Face Multimodal',
+            role: 'FLUX & Canvas Multimodal',
             icon: ImageIcon,
             color: 'from-fuchsia-500 to-pink-500',
             borderColor: 'border-fuchsia-500/30',
             textColor: 'text-fuchsia-400',
-            description: 'Produces high-impact 4K marketing visual assets via Gemini 3.5 & Hugging Face FLUX/SDXL.',
+            description: 'Produces high-impact 4K marketing visual assets via Hugging Face FLUX and Brand Compositor.',
         },
         {
             id: 'seo',
@@ -861,7 +922,7 @@ export default function DashboardPage() {
                 setExecutionLogs((prev) => [
                     ...prev,
                     { id: Date.now(), time: timestamp(), agent: 'Research Agent', text: 'Retrieved live competitor signals and trends via DuckDuckGo SERP.' },
-                    { id: Date.now() + 1, time: timestamp(), agent: 'Copywriter Agent', text: 'Synthesized multi-channel copy & creative visual prompts via Gemini 3 Flash.' },
+                    { id: Date.now() + 1, time: timestamp(), agent: 'Copywriter Agent', text: 'Synthesized multi-channel copy & creative visual prompts via Groq LPU.' },
                     { id: Date.now() + 2, time: timestamp(), agent: 'Image Generation Agent', text: bundle.generated_image_url ? `Campaign visual generated: ${bundle.generated_image_url}` : 'Visual asset formatted.' },
                     { id: Date.now() + 3, time: timestamp(), agent: 'SEO & Analytics Agent', text: `Readability score: ${bundle.seo_metrics?.readability_score || 85}/100 | Intent Match: ${bundle.seo_metrics?.intent_match || '90%'}` },
                     { id: Date.now() + 4, time: timestamp(), agent: 'Social Publisher Agent', text: `Formatted ${bundle.publishing_manifests?.length || 4} omnichannel channel payloads.` },
@@ -1099,7 +1160,7 @@ export default function DashboardPage() {
                                 </span>
                             </div>
                             <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-                                Orchestrate vector retrieval, live DuckDuckGo SERP intel, Gemini 3.5 & Hugging Face multimodal copy/visual synthesis, and omnichannel publishing.
+                                Orchestrate vector retrieval, live DuckDuckGo SERP intel, Groq LPU high-speed copy synthesis, and omnichannel publishing.
                             </p>
                         </div>
 
@@ -2863,10 +2924,14 @@ export default function DashboardPage() {
                                                                         </div>
                                                                     </div>
 
-                                                                    <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800">
-                                                                        <p className="text-xs text-slate-300 font-mono leading-relaxed selection:bg-pink-600">
+                                                                    <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2">
+                                                                        <div className="flex items-center justify-between pb-1 text-[10px] text-slate-500 font-mono border-b border-slate-900">
+                                                                            <span>CREATIVE DIRECTOR SPECIFICATION</span>
+                                                                            <span className="text-pink-400/90 font-medium">FLUX.1 / Midjourney 8K Ready</span>
+                                                                        </div>
+                                                                        <div className="text-xs text-slate-300 font-mono leading-relaxed whitespace-pre-wrap selection:bg-pink-600">
                                                                             {parsedBundle.visualPrompt}
-                                                                        </p>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             )}

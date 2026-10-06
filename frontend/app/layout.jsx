@@ -4,7 +4,7 @@ import Navbar from '../components/Navbar';
 
 export const metadata = {
   title: 'AgenticMarketer — Autonomous Marketing Intelligence Swarm',
-  description: 'Multi-Agent Marketing Orchestration System powered by Gemini 3.5, Hugging Face, FAISS Vector RAG & Autonomous Publishing.',
+  description: 'Multi-Agent Marketing Orchestration System powered by Groq LPU, Hugging Face, Vector RAG & Autonomous Publishing.',
 };
 
 export default function RootLayout({ children }) {

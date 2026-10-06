@@ -22,24 +22,28 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
 
-    # ── Google Gemini AI ─────────────────────────────────────────────
-    GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.8-flash"
-    GEMINI_IMAGE_MODEL: str = "gemini-3-pro-image"
+    # ── Groq Cloud LPU AI (Primary High-Speed LLM Engine) ────────────
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
+    GROQ_FAST_MODEL: str = "openai/gpt-oss-20b"
+
+    @property
+    def effective_groq_token(self) -> str:
+        """Returns Groq API token from GROQ_API_KEY or Groq_API_KEY env var."""
+        import os
+        return self.GROQ_API_KEY or os.getenv("GROQ_API_KEY") or os.getenv("Groq_API_KEY") or ""
 
     @property
     def effective_text_model(self) -> str:
-        """Returns valid text model identifier for Google GenAI SDK."""
-        if not self.GEMINI_MODEL or "image" in self.GEMINI_MODEL.lower():
-            return "gemini-3.8-flash"
-        return self.GEMINI_MODEL
+        """Returns active text model identifier (Groq LPU)."""
+        return self.GROQ_MODEL or "openai/gpt-oss-120b"
 
     @property
     def effective_image_model(self) -> str:
         """Returns the model for image generation."""
-        return self.GEMINI_IMAGE_MODEL or "gemini-3-pro-image"
+        return self.HUGGINGFACE_IMAGE_MODEL or "black-forest-labs/FLUX.1-schnell"
 
-    # ── Hugging Face AI (Secondary / Fallback Image Generation) ───────
+    # ── Hugging Face AI (Image Generation) ───────────────────────────
     HUGGINGFACE_API_KEY: str = ""
     HUGGINGFACE_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-schnell"
 
@@ -49,7 +53,7 @@ class Settings(BaseSettings):
         import os
         return self.HUGGINGFACE_API_KEY or os.getenv("HF_TOKEN") or ""
 
-    # ── Grok AI (xAI API) ────────────────────────────────────────────
+    # ── Grok AI (xAI API Fallback) ───────────────────────────────────
     GROK_API_KEY: str = ""
     XAI_API_KEY: str = ""
     GROK_MODEL: str = "grok-2-latest"
@@ -59,16 +63,6 @@ class Settings(BaseSettings):
         """Returns Grok/xAI API token from GROK_API_KEY or XAI_API_KEY env var."""
         import os
         return self.GROK_API_KEY or self.XAI_API_KEY or os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY") or ""
-
-    # ── Groq Cloud AI (Groq API) ─────────────────────────────────────
-    GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "openai/gpt-oss-120b"
-
-    @property
-    def effective_groq_token(self) -> str:
-        """Returns Groq API token from GROQ_API_KEY or Groq_API_KEY env var."""
-        import os
-        return self.GROQ_API_KEY or os.getenv("GROQ_API_KEY") or os.getenv("Groq_API_KEY") or ""
 
     # ── Storage & RAG Directories ────────────────────────────────────
     DATA_DIRECTORY: str = str(Path(__file__).resolve().parents[2] / "data")

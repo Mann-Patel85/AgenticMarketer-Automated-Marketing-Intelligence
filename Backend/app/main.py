@@ -80,7 +80,7 @@ async def favicon():
 
 @app.get("/api/swarm/images/{filename}", tags=["Swarm"])
 async def serve_campaign_image(filename: str):
-    """Serves AI-generated campaign images produced by Gemini 2.5 Flash (Nano Banana)."""
+    """Serves AI-generated campaign images produced by FLUX / Photorealistic engine."""
     images_dir = (Path(settings.UPLOAD_DIRECTORY) / "images").resolve()
     safe_filename = Path(filename).name
     file_path = (images_dir / safe_filename).resolve()
@@ -127,8 +127,11 @@ async def health_check():
         ],
         "rag_status": "operational",
         "indexed_documents_count": len(docs),
-        "gemini_api_configured": bool(settings.GEMINI_API_KEY),
-        "gemini_model": settings.effective_text_model,
+        "groq_api_configured": bool(settings.effective_groq_token),
+        "groq_model": settings.GROQ_MODEL,
+        "groq_models_available": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"],
+        "gemini_api_configured": False,
+        "gemini_model": "None (Migrated to Groq LPU)",
         "grok_api_configured": bool(settings.effective_grok_token),
         "grok_model": settings.GROK_MODEL,
         "image_model": settings.effective_image_model,
@@ -145,8 +148,10 @@ async def system_telemetry():
     docs = rag_store.list_documents()
     total_chunks = sum(d.get("chunk_count", 0) for d in docs)
     return {
-        "gemini_tokens_used": 142850,
-        "gemini_token_quota": 1000000,
+        "groq_tokens_used": 142850,
+        "groq_token_quota": 1000000,
+        "gemini_tokens_used": 0,
+        "gemini_token_quota": 0,
         "chroma_chunks_indexed": total_chunks,
         "indexed_documents": len(docs),
         "active_seats": 5,
