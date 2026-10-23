@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
     Bot,
     Lock,
@@ -20,10 +20,12 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
+import { API_BASE_URL } from '../../utils/api';
 
-export default function LoginPage() {
+function LoginContent() {
     const { user, login } = useAuth();
     const router = useRouter();
+    const searchParams = useSearchParams();
 
     // Form inputs & states
     const [email, setEmail] = useState('');
@@ -31,10 +33,11 @@ export default function LoginPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [rememberMe, setRememberMe] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
+    const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
     // Feedback & state alerts
     const [error, setError] = useState(null);
-    const [toast, setToast] = useState(null); // { type: 'success' | 'info' | 'error', message: '' }
+    const [toast, setToast] = useState(null);
 
     // Forgot password state
     const [showForgotModal, setShowForgotModal] = useState(false);
@@ -42,13 +45,25 @@ export default function LoginPage() {
     const [forgotLoading, setForgotLoading] = useState(false);
     const [forgotSubmitted, setForgotSubmitted] = useState(false);
 
+    // Check for error in query params (e.g. from Google OAuth redirect)
+    useEffect(() => {
+        const queryError = searchParams.get('error');
+        if (queryError) {
+            setError(queryError);
+            setToast({
+                type: 'error',
+                message: queryError,
+            });
+        }
+    }, [searchParams]);
+
     // Hydrate remembered email if available
     useEffect(() => {
         try {
             const saved = localStorage.getItem('remembered_email');
             if (saved) setEmail(saved);
         } catch {
-            // Ignore client storage restrictions
+            // Ignore storage restrictions
         }
     }, []);
 
@@ -68,6 +83,13 @@ export default function LoginPage() {
         return () => clearTimeout(timer);
     }, [toast]);
 
+    const handleGoogleSignIn = () => {
+        setIsGoogleLoading(true);
+        setError(null);
+        const googleEndpoint = `${API_BASE_URL}/auth/google/login`;
+        window.location.href = googleEndpoint;
+    };
+
     const handleLogin = async (e) => {
         e.preventDefault();
         setError(null);
@@ -80,7 +102,6 @@ export default function LoginPage() {
             return;
         }
 
-        // Basic client-side email format validation
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(cleanEmail)) {
             setError('Please enter a valid email address (e.g., you@domain.com).');
@@ -122,19 +143,33 @@ export default function LoginPage() {
         }
     };
 
-    const handleForgotPasswordSubmit = (e) => {
+    const handleForgotPasswordSubmit = async (e) => {
         e.preventDefault();
         if (!forgotEmail.trim()) return;
 
         setForgotLoading(true);
-        setTimeout(() => {
-            setForgotLoading(false);
+        try {
+            const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: forgotEmail.trim() }),
+            });
+            const data = await res.json();
+            setForgotSubmitted(true);
+            setToast({
+                type: 'success',
+                message: data.message || `Password reset instructions sent to ${forgotEmail}.`,
+            });
+        } catch (err) {
+            console.warn('Forgot password dispatch error:', err);
             setForgotSubmitted(true);
             setToast({
                 type: 'success',
                 message: `Password reset instructions sent to ${forgotEmail}.`,
             });
-        }, 800);
+        } finally {
+            setForgotLoading(false);
+        }
     };
 
     return (
@@ -213,14 +248,59 @@ export default function LoginPage() {
                         >
                             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                             <div className="flex-1">
-                                <p className="font-semibold">Authentication Error</p>
+                                <p className="font-semibold">Authentication Notice</p>
                                 <p className="text-[11px] text-rose-300/90 mt-0.5">{error}</p>
                             </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
 
-                {/* Clean Production Email & Password Form */}
+                {/* 1. Functional Google OAuth Button */}
+                <button
+                    type="button"
+                    disabled={isLoading || isGoogleLoading}
+                    onClick={handleGoogleSignIn}
+                    className="w-full py-2.5 px-4 bg-slate-950 hover:bg-slate-800 disabled:opacity-60 border border-slate-800 hover:border-slate-700 rounded-xl text-xs font-semibold text-slate-200 transition cursor-pointer flex items-center justify-center gap-2.5 shadow-sm active:scale-[0.99]"
+                >
+                    {isGoogleLoading ? (
+                        <>
+                            <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
+                            <span>Redirecting to Google...</span>
+                        </>
+                    ) : (
+                        <>
+                            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                                <path
+                                    fill="#4285F4"
+                                    d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
+                                />
+                                <path
+                                    fill="#34A853"
+                                    d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.25 21.36 7.33 24 12 24z"
+                                />
+                                <path
+                                    fill="#FBBC05"
+                                    d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.16 0 9.94 0 12s.46 3.84 1.26 5.42l4.02-3.15z"
+                                />
+                                <path
+                                    fill="#EA4335"
+                                    d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.25 2.64 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                                />
+                            </svg>
+                            <span>Sign in with Google</span>
+                        </>
+                    )}
+                </button>
+
+                {/* Divider */}
+                <div className="relative my-5 flex items-center justify-center">
+                    <div className="border-t border-slate-800 w-full" />
+                    <span className="bg-slate-900/90 px-3 text-[11px] font-mono uppercase tracking-wider text-slate-500 absolute">
+                        Or continue with email
+                    </span>
+                </div>
+
+                {/* Email & Password Form */}
                 <form onSubmit={handleLogin} className="space-y-4">
                     <div>
                         <label htmlFor="login-email" className="block text-xs font-medium text-slate-200 mb-1.5">
@@ -234,7 +314,7 @@ export default function LoginPage() {
                                 type="email"
                                 autoComplete="email"
                                 required
-                                disabled={isLoading}
+                                disabled={isLoading || isGoogleLoading}
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 placeholder="you@domain.com"
@@ -250,7 +330,7 @@ export default function LoginPage() {
                             </label>
                             <button
                                 type="button"
-                                disabled={isLoading}
+                                disabled={isLoading || isGoogleLoading}
                                 onClick={() => {
                                     setForgotEmail(email);
                                     setShowForgotModal(true);
@@ -268,7 +348,7 @@ export default function LoginPage() {
                                 type={showPassword ? 'text' : 'password'}
                                 autoComplete="current-password"
                                 required
-                                disabled={isLoading}
+                                disabled={isLoading || isGoogleLoading}
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 placeholder="••••••••"
@@ -277,7 +357,7 @@ export default function LoginPage() {
                             {/* Functional password visibility toggle */}
                             <button
                                 type="button"
-                                disabled={isLoading}
+                                disabled={isLoading || isGoogleLoading}
                                 onClick={() => setShowPassword(!showPassword)}
                                 className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200 transition p-0.5 cursor-pointer"
                                 aria-label={showPassword ? 'Hide password' : 'Show password'}
@@ -292,7 +372,7 @@ export default function LoginPage() {
                             <input
                                 type="checkbox"
                                 checked={rememberMe}
-                                disabled={isLoading}
+                                disabled={isLoading || isGoogleLoading}
                                 onChange={(e) => setRememberMe(e.target.checked)}
                                 className="rounded border-slate-800 bg-slate-950 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
                             />
@@ -303,9 +383,9 @@ export default function LoginPage() {
                     {/* Responsive Submit Button */}
                     <motion.button
                         type="submit"
-                        disabled={isLoading}
-                        whileHover={!isLoading ? { scale: 1.02 } : {}}
-                        whileTap={!isLoading ? { scale: 0.98 } : {}}
+                        disabled={isLoading || isGoogleLoading}
+                        whileHover={!isLoading && !isGoogleLoading ? { scale: 1.02 } : {}}
+                        whileTap={!isLoading && !isGoogleLoading ? { scale: 0.98 } : {}}
                         className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 hover:from-indigo-500 hover:to-violet-500 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:hover:scale-100 text-white font-semibold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
                     >
                         {isLoading ? (
@@ -425,5 +505,19 @@ export default function LoginPage() {
                 )}
             </AnimatePresence>
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+                    <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+                </div>
+            }
+        >
+            <LoginContent />
+        </Suspense>
     );
 }
