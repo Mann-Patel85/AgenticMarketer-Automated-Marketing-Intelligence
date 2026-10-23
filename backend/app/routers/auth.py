@@ -1,11 +1,13 @@
 """
 AgenticMarketer Backend — Authentication Router.
 Production Authentication, Google OAuth 2.0 Integration, Transactional Emails,
-JWT Token Issuance, and Strict Role-Based Access Control (RBAC).
+JWT Token Issuance, Strict Role-Based Access Control (RBAC), and 10-Operator Seat Limit.
 """
 
 import os
 import uuid
+import json
+import base64
 import urllib.parse
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
@@ -28,20 +30,29 @@ from backend.app.services.email import send_welcome_email, send_password_reset_e
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
+# Strict Global Limit on Operator Seats
+MAX_OPERATOR_SEATS = 10
+
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 
 
 def _get_frontend_url(request: Request) -> str:
     """Resolves production or local frontend origin for OAuth redirects."""
-    configured = os.getenv("FRONTEND_PROD_URL", "").strip().rstrip("/")
+    configured = os.getenv("FRONTEND_PROD_URL", "").strip()
     if configured:
-        return configured
+        parsed = urllib.parse.urlparse(configured)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+        return configured.rstrip("/")
     referer = request.headers.get("referer")
     if referer:
         parsed = urllib.parse.urlparse(referer)
         return f"{parsed.scheme}://{parsed.netloc}"
-    return "https://agenticmarketer.vercel.app"
+    origin = request.headers.get("origin")
+    if origin:
+        return origin.rstrip("/")
+    return "https://agentic-marketer-automated-marketin.vercel.app"
 
 
 def _get_backend_url(request: Request) -> str:
@@ -49,7 +60,6 @@ def _get_backend_url(request: Request) -> str:
     configured = os.getenv("BACKEND_PROD_URL", "").strip().rstrip("/")
     if configured:
         return configured
-    # Handle reverse proxy / Render SSL headers
     proto = request.headers.get("x-forwarded-proto", request.url.scheme)
     host = request.headers.get("x-forwarded-host", request.headers.get("host", "localhost:8000"))
     return f"{proto}://{host}"
@@ -91,10 +101,10 @@ class AuthTokenResponse(BaseModel):
 async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
     """
     Register a new user in the AgenticMarketer workspace.
-    Public self-registration defaults strictly to the standard 'user' role.
-    Only the configured ADMIN_EMAIL automatically receives 'admin' clearance.
+    Enforces the strict MAX_OPERATOR_SEATS (10) capacity cap.
     """
     email_key = payload.email.lower().strip()
+    admin_email = os.getenv("ADMIN_EMAIL", "mann@company.com").lower().strip()
 
     existing_user = db.query(User).filter(User.email == email_key).first()
     if existing_user:
@@ -103,10 +113,15 @@ async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
             detail="An account with this email address already exists. Please sign in.",
         )
 
-    # Strict RBAC: All public self-registrations receive standard 'user' role
-    admin_email = os.getenv("ADMIN_EMAIL", "mann@company.com").lower().strip()
-    assigned_role = "admin" if email_key == admin_email else "user"
+    # 1. Enforce 10-Operator Seat Limit
+    current_seats = db.query(User).count()
+    if current_seats >= MAX_OPERATOR_SEATS and email_key != admin_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Operator seat limit reached ({MAX_OPERATOR_SEATS}/{MAX_OPERATOR_SEATS} seats filled). Contact the administrator for workspace clearance.",
+        )
 
+    assigned_role = "admin" if email_key == admin_email else "user"
     user_id = str(uuid.uuid4())
     new_user = User(
         id=user_id,
@@ -160,10 +175,7 @@ async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=AuthTokenResponse)
 async def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
-    """
-    Authenticate user credentials against PostgreSQL and return a signed JWT access token.
-    Strictly denies invalid credentials with 401 Unauthorized.
-    """
+    """Authenticate user credentials against PostgreSQL and return a signed JWT access token."""
     email_key = payload.email.lower().strip()
 
     user = db.query(User).filter(User.email == email_key).first()
@@ -221,7 +233,6 @@ async def forgot_password(payload: ForgotPasswordRequest, request: Request, db: 
         except Exception as exc:
             print(f"[Auth] Warning: Could not dispatch password reset email: {exc}")
 
-    # Always return success message to prevent user enumeration
     return {
         "message": f"If an account exists for {email_key}, password recovery instructions have been dispatched.",
         "status": "dispatched",
@@ -244,6 +255,13 @@ async def google_login(request: Request):
     backend_url = _get_backend_url(request)
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI") or f"{backend_url}/api/auth/google/callback"
 
+    # Encode client frontend origin into state so callback always returns to the right domain
+    state_payload = {
+        "nonce": str(uuid.uuid4())[:8],
+        "frontend": frontend_url,
+    }
+    encoded_state = base64.urlsafe_b64encode(json.dumps(state_payload).encode()).decode()
+
     params = {
         "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": redirect_uri,
@@ -251,6 +269,7 @@ async def google_login(request: Request):
         "scope": "openid email profile",
         "access_type": "offline",
         "prompt": "select_account",
+        "state": encoded_state,
     }
     google_auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     return RedirectResponse(url=google_auth_url)
@@ -260,17 +279,28 @@ async def google_login(request: Request):
 async def google_callback(
     request: Request,
     code: Optional[str] = None,
+    state: Optional[str] = None,
     error: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """
     Handles Google OAuth redirect:
-    1. Exchanges authorization code for tokens.
-    2. Retrieves user profile from Google.
-    3. Auto-provisions user in PostgreSQL if first visit.
-    4. Issues signed JWT and redirects to frontend /auth/callback.
+    1. Extracts state to resolve original frontend domain.
+    2. Exchanges authorization code for tokens.
+    3. Retrieves user profile from Google.
+    4. Enforces MAX_OPERATOR_SEATS (10) capacity cap.
+    5. Allows existing users to log in cleanly.
+    6. Issues signed JWT and redirects to frontend /auth/callback.
     """
+    # Resolve originating frontend origin from state
     frontend_url = _get_frontend_url(request)
+    if state:
+        try:
+            state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+            if state_data.get("frontend"):
+                frontend_url = state_data["frontend"].rstrip("/")
+        except Exception:
+            pass
 
     if error:
         return RedirectResponse(url=f"{frontend_url}/login?error=Google+OAuth+cancelled+or+failed:+{error}")
@@ -320,21 +350,25 @@ async def google_callback(
     if not google_email:
         return RedirectResponse(url=f"{frontend_url}/login?error=No+email+associated+with+Google+account.")
 
-    # ── Database Account Resolution / Auto-Creation ───────────────────
+    admin_email = os.getenv("ADMIN_EMAIL", "mann@company.com").lower().strip()
     user = db.query(User).filter(User.email == google_email).first()
-    is_new_user = False
 
+    # ── Seat Cap Enforcement for New Registrations ─────────────────────
     if not user:
-        is_new_user = True
-        admin_email = os.getenv("ADMIN_EMAIL", "mann@company.com").lower().strip()
-        assigned_role = "admin" if google_email == admin_email else "user"
+        current_seats = db.query(User).count()
+        # If total seats >= 10 and not the primary admin, reject immediately
+        if current_seats >= MAX_OPERATOR_SEATS and google_email != admin_email:
+            print(f"[Auth Security] Google OAuth rejected for {google_email}: Workspace seat limit reached ({current_seats}/{MAX_OPERATOR_SEATS}).")
+            return RedirectResponse(url=f"{frontend_url}/login?error=seat_limit_reached")
 
+        # Provision new operator
+        assigned_role = "admin" if google_email == admin_email else "user"
         user_id = str(uuid.uuid4())
         user = User(
             id=user_id,
             name=google_name,
             email=google_email,
-            password_hash=hash_password(str(uuid.uuid4())),  # Random non-guessable hash for OAuth accounts
+            password_hash=hash_password(str(uuid.uuid4())),
             role=assigned_role,
             created_at=datetime.now(timezone.utc),
         )
@@ -342,14 +376,14 @@ async def google_callback(
         db.commit()
         db.refresh(user)
 
-        # Trigger welcome email for new Google OAuth registrations
+        # Send welcome email asynchronously
         try:
             import asyncio
             asyncio.create_task(send_welcome_email(google_email, google_name))
         except Exception as exc:
             print(f"[OAuth] Warning: Could not dispatch welcome email: {exc}")
 
-    # Issue signed platform JWT
+    # ── Issue Signed Platform JWT ─────────────────────────────────────
     jwt_token = create_access_token({
         "sub": user.email,
         "name": user.name,
@@ -367,9 +401,18 @@ async def google_callback(
     db.add(session_record)
     db.commit()
 
-    # Smooth redirect to frontend OAuth callback receiver
+    # Deliver token via URL parameter AND cookie for maximum compatibility
     redirect_target = f"{frontend_url}/auth/callback?token={jwt_token}"
-    return RedirectResponse(url=redirect_target)
+    response = RedirectResponse(url=redirect_target, status_code=302)
+    response.set_cookie(
+        key="token",
+        value=jwt_token,
+        max_age=604800,
+        path="/",
+        samesite="lax",
+        secure=True,
+    )
+    return response
 
 
 # ── Profile & Users Queries ──────────────────────────────────────────

@@ -15,19 +15,26 @@ function CallbackContent() {
         const token = searchParams.get('token');
         const error = searchParams.get('error');
 
+        let activeToken = token;
+        if (!activeToken && typeof document !== 'undefined') {
+            const match = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
+            if (match) activeToken = match[1];
+        }
+
         if (error) {
-            setErrorMessage(error);
+            const displayErr = error === 'seat_limit_reached' ? 'Workspace full: Maximum 10 operator seats reached.' : error;
+            setErrorMessage(displayErr);
             setTimeout(() => {
                 router.replace(`/login?error=${encodeURIComponent(error)}`);
-            }, 2000);
+            }, 1200);
             return;
         }
 
-        if (!token) {
+        if (!activeToken) {
             setErrorMessage('No authentication token received.');
             setTimeout(() => {
                 router.replace('/login?error=Authentication+token+missing');
-            }, 2000);
+            }, 1500);
             return;
         }
 

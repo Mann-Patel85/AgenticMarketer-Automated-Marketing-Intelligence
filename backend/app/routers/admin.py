@@ -98,9 +98,32 @@ async def update_user_clearance(
     )
 
 
+from backend.app.core.security import require_roles, get_current_user
+
+MAX_OPERATOR_SEATS = 10
+
+
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: str, db: Session = Depends(get_db)):
-    """Permanently delete a user account from the workspace."""
+async def delete_user(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Permanently revoke an operator seat and delete user account from the workspace.
+    Strictly restricted to the primary Super Admin (Mann Patel).
+    """
+    admin_email = os.getenv("ADMIN_EMAIL", "mann@company.com").lower().strip()
+    caller_email = current_user.get("sub", "").lower().strip()
+    caller_role = current_user.get("role", "").lower().strip()
+
+    # Only primary Super Admin can revoke seats
+    if caller_email != admin_email and caller_role not in ["admin", "owner"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Only the primary Super Admin (Mann Patel) can revoke operator seats.",
+        )
+
     target_user = db.query(User).filter(User.id == user_id).first()
     if not target_user:
         raise HTTPException(
@@ -108,16 +131,23 @@ async def delete_user(user_id: str, db: Session = Depends(get_db)):
             detail=f"User with ID '{user_id}' not found.",
         )
 
-    admin_email = os.getenv("ADMIN_EMAIL", "mann@company.com").lower().strip()
     if target_user.email == admin_email:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="The primary Super Admin / Owner account cannot be deleted.",
+            detail="The primary Super Admin / Owner account cannot be deleted or revoked.",
         )
 
     db.delete(target_user)
     db.commit()
-    return {"message": f"User '{target_user.email}' successfully removed.", "status": "deleted"}
+
+    remaining_seats = db.query(User).count()
+    return {
+        "message": f"Operator seat for '{target_user.email}' successfully revoked.",
+        "status": "revoked",
+        "seats_used": remaining_seats,
+        "max_seats": MAX_OPERATOR_SEATS,
+        "seats_available": max(0, MAX_OPERATOR_SEATS - remaining_seats),
+    }
 
 
 @router.get("/system", response_model=AdminStatsResponse)

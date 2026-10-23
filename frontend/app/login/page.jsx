@@ -49,10 +49,14 @@ function LoginContent() {
     useEffect(() => {
         const queryError = searchParams.get('error');
         if (queryError) {
-            setError(queryError);
+            let userMessage = queryError;
+            if (queryError === 'seat_limit_reached') {
+                userMessage = 'Workspace full: Maximum 10 operator seats reached. Contact the administrator for workspace clearance.';
+            }
+            setError(userMessage);
             setToast({
                 type: 'error',
-                message: queryError,
+                message: userMessage,
             });
         }
     }, [searchParams]);
