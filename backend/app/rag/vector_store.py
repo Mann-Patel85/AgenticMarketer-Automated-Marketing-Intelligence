@@ -28,6 +28,11 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from backend.app.core.config import get_settings
+from backend.app.services.rag_prompts import (
+    RAG_SYSTEM_INSTRUCTION,
+    build_rag_synthesis_prompt,
+    sanitize_rag_markdown,
+)
 
 # Standard English stop words + conversational query noise to strip for dense vectorization
 ENGLISH_STOP_WORDS = {
@@ -611,27 +616,10 @@ class RAGVectorStore:
         if not top_chunks:
             return "No relevant grounding documents found in vector memory for this query."
 
-        context_passages = "\n\n".join([
-            f"--- Document: {c.get('doc_name', 'Document')} (Chunk {c.get('chunk_index', 0)}) ---\n{c.get('text', '')}"
-            for c in top_chunks
-        ])
-
-        prompt = f"""You are an enterprise Brand & Marketing Intelligence AI assistant.
-Based STRICTLY on the grounding context provided below, synthesize a direct, clear, highly informative answer to the user's query.
-
-[User Query]:
-{query}
-
-[Grounding Documents Context]:
-{context_passages}
-
-Guidelines for your response:
-1. Provide a direct, professional, well-structured answer (use bullet points or markdown tables where appropriate).
-2. Highlight specific rules, guidelines, hex codes, or key takeaways mentioned in the documents.
-3. If the context does not fully answer the query, clearly state what information is available from the documents.
-"""
+        user_prompt = build_rag_synthesis_prompt(query, top_chunks)
         settings = get_settings()
-        # 1. High-speed Groq LPU inference
+
+        # 1. High-speed Groq LPU inference with strict GFM formatting rules
         groq_token = settings.effective_groq_token
         if groq_token:
             for model in [settings.GROQ_MODEL, "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
@@ -644,24 +632,26 @@ Guidelines for your response:
                     payload = {
                         "model": model,
                         "messages": [
-                            {"role": "system", "content": "You are a precise enterprise RAG synthesis engine."},
-                            {"role": "user", "content": prompt}
+                            {"role": "system", "content": RAG_SYSTEM_INSTRUCTION},
+                            {"role": "user", "content": user_prompt}
                         ],
                         "temperature": 0.2,
-                        "max_tokens": 768
+                        "max_tokens": 1500
                     }
-                    res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=8)
+                    res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=12)
                     if res.status_code == 200:
                         data = res.json()
                         ans = data['choices'][0]['message']['content'].strip()
                         if ans:
-                            return ans
+                            return sanitize_rag_markdown(ans)
                 except Exception:
                     continue
 
-        # 3. Fallback snippet
-        snippet = top_chunks[0].get("text", "")[:300]
-        return f"Based on indexed document ({top_chunks[0].get('doc_name')}):\n\n{snippet}..."
+        # 2. Fallback snippet if model offline
+        snippet = top_chunks[0].get("text", "")[:350].strip()
+        doc_label = top_chunks[0].get('doc_name', 'Grounding Document')
+        fallback = f"### Grounded Reference: {doc_label}\n\n{snippet}..."
+        return sanitize_rag_markdown(fallback)
 
 
 # Singleton instance

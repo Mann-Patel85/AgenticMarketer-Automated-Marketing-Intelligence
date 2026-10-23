@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import ProtectedRoute from '../../components/ProtectedRoute';
+import RAGAnswer from '../../components/RAGAnswer';
 import {
     Database,
     Upload,
@@ -916,9 +917,7 @@ export default function KnowledgePage() {
                                                     {selectedSearchDoc !== 'ALL' ? `Filtered to: ${selectedSearchDoc}` : 'RAG Intelligence Engine'}
                                                 </span>
                                             </div>
-                                            <div className="text-xs text-slate-200 leading-relaxed font-sans whitespace-pre-wrap">
-                                                {synthesizedAnswer}
-                                            </div>
+                                            <RAGAnswer content={synthesizedAnswer} />
                                         </div>
                                     )}
 

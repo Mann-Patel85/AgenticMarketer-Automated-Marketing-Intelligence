@@ -12,6 +12,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, status
 
 from backend.app.core.config import get_settings
 from backend.app.rag.vector_store import rag_store
+from backend.app.services.rag_prompts import sanitize_rag_markdown
 
 router = APIRouter(prefix="/api/rag", tags=["Knowledge Base & RAG"])
 
@@ -130,10 +131,11 @@ async def query_knowledge_base(payload: RAGQueryRequest):
         top_k=payload.top_k or 4,
         doc_filter=doc_filter if doc_filter else None,
     )
-    answer = rag_store.synthesize_answer(payload.query, results)
+    raw_answer = rag_store.synthesize_answer(payload.query, results)
+    clean_answer = sanitize_rag_markdown(raw_answer)
     return RAGQueryResponse(
         query=payload.query,
-        answer=answer,
+        answer=clean_answer,
         results=[RAGChunkResponse(**r) for r in results]
     )
 
