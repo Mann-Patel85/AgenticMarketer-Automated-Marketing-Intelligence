@@ -211,9 +211,18 @@ def init_db():
             db.commit()
             print(f"[Database] Provisioned primary Super Admin account: {admin_name} ({admin_email})")
         else:
-            # Guarantee Super Admin role integrity
+            # Guarantee Super Admin role integrity and update credentials if provided in env
+            updated = False
             if admin_user.role != "admin":
                 admin_user.role = "admin"
+                updated = True
+            if os.getenv("ADMIN_PASSWORD"):
+                admin_user.password_hash = hash_password(admin_password)
+                updated = True
+            if os.getenv("ADMIN_NAME") and admin_user.name != admin_name:
+                admin_user.name = admin_name
+                updated = True
+            if updated:
                 db.commit()
 
         # Migrate local workspaces.json if found and table is empty
