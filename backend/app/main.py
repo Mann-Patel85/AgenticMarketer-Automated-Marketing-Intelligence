@@ -7,13 +7,23 @@ Microservices Architecture:
 - /api/publish: Omnichannel Social Publishing & Universal Webhooks
 """
 
-from contextlib import asynccontextmanager
+import os
+import sys
 from pathlib import Path
+
+# Ensure project root and backend folder are in sys.path so imports succeed on Linux/Render
+_current_file = Path(__file__).resolve()
+_backend_dir = _current_file.parents[1]
+_repo_root = _current_file.parents[2]
+for _p in [str(_repo_root), str(_backend_dir)]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Response, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 
-import os
 from backend.app.core.config import get_settings
 from backend.app.database import init_db
 from backend.app.routers.auth import router as auth_router

@@ -5,11 +5,20 @@ with automatic schema initialization and local SQLite fallback for offline devel
 """
 
 import os
+import sys
 import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Generator, Optional, Dict, Any, List
+
+# Ensure project root is in sys.path
+_current_file = Path(__file__).resolve()
+_backend_dir = _current_file.parents[1]
+_repo_root = _current_file.parents[2]
+for _p in [str(_repo_root), str(_backend_dir)]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from sqlalchemy import (
     create_engine,
