@@ -41,8 +41,59 @@ export const AuthProvider = ({ children }) => {
             setIsLoadingAuth(false);
         };
 
+        const handleAuthSync = (e) => {
+            if (e?.detail?.user) {
+                setUser(e.detail.user);
+                setIsLoadingAuth(false);
+            } else {
+                try {
+                    const saved = localStorage.getItem('agentic_user');
+                    if (saved && saved !== 'null' && saved !== 'undefined') {
+                        setUser(JSON.parse(saved));
+                    }
+                } catch (_) {}
+            }
+        };
+
+        if (typeof window !== 'undefined') {
+            window.addEventListener('agentic_auth_sync', handleAuthSync);
+            window.addEventListener('storage', handleAuthSync);
+        }
+
         initAuth();
+
+        return () => {
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('agentic_auth_sync', handleAuthSync);
+                window.removeEventListener('storage', handleAuthSync);
+            }
+        };
     }, []);
+
+    const setAuthSession = (token, userData) => {
+        if (token) {
+            localStorage.setItem('token', token);
+            if (typeof document !== 'undefined') {
+                document.cookie = `token=${token}; path=/; max-age=604800; SameSite=Lax`;
+            }
+        }
+        if (userData) {
+            localStorage.setItem('agentic_user', JSON.stringify(userData));
+            setUser(userData);
+        }
+        setIsLoadingAuth(false);
+
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+                new CustomEvent('agentic_auth_sync', { detail: { token, user: userData } })
+            );
+        }
+    };
+
+    const loginWithToken = (token, userData) => {
+        setAuthSession(token, userData);
+        return userData;
+    };
 
     const login = async (email, password) => {
         const cleanEmail = email.trim().toLowerCase();
@@ -134,19 +185,19 @@ export const AuthProvider = ({ children }) => {
 
     const demoLogin = (roleType) => {
         let creds = {
-            email: 'mann@company.com',
-            full_name: 'Mann Patel (Leader)',
+            email: 'leader@workspace.internal',
+            full_name: 'Lead Commander',
             role: 'leader',
         };
         if (roleType === 'admin') {
             creds = {
-                email: 'admin@company.com',
+                email: 'admin@workspace.internal',
                 full_name: 'DevOps Administrator',
                 role: 'admin',
             };
         } else if (roleType === 'marketer') {
             creds = {
-                email: 'marketer@company.com',
+                email: 'marketer@workspace.internal',
                 full_name: 'Growth Marketer',
                 role: 'marketer',
             };
@@ -168,6 +219,8 @@ export const AuthProvider = ({ children }) => {
                 logout,
                 demoLogin,
                 isLoadingAuth,
+                setAuthSession,
+                loginWithToken,
                 isAuthenticated: !!user,
                 isLeader: user?.role === 'leader',
                 isAdmin: user?.role === 'admin' || user?.role === 'leader',

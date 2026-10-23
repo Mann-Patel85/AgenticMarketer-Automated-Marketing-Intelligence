@@ -12,6 +12,12 @@ export default function ProtectedRoute({ children, allowedRoles }) {
     useEffect(() => {
         if (!isLoadingAuth) {
             if (!user) {
+                // If token or user data exists in storage, allow hydration rather than kicking out
+                const storedToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+                const storedUser = typeof window !== 'undefined' ? localStorage.getItem('agentic_user') : null;
+                if (storedToken && storedUser) {
+                    return;
+                }
                 router.replace('/login');
             } else if (allowedRoles && !allowedRoles.includes(user.role)) {
                 router.replace('/dashboard');

@@ -180,44 +180,51 @@ def get_db() -> Generator[Session, None, None]:
 def init_db():
     """
     Initializes database tables and ensures ONLY the primary Super Admin
-    (Mann Patel) account exists, purging any prototype/demo seed accounts.
+    account exists, purging any prototype/demo seed accounts.
     """
     Base.metadata.create_all(bind=engine)
 
     with SessionLocal() as db:
-        admin_email = os.getenv("ADMIN_EMAIL", "mann@company.com").lower().strip()
-        admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
-        admin_name = os.getenv("ADMIN_NAME", "Mann Patel")
+        admin_email = os.getenv("ADMIN_EMAIL", "").lower().strip()
+        admin_password = os.getenv("ADMIN_PASSWORD", "")
+        admin_name = os.getenv("ADMIN_NAME", "Administrator")
 
-        # Purge prototype / demo seed accounts from production database
-        demo_emails = ["marketer@company.com", "sarah@company.com", "admin@company.com"]
+        # Purge prototype / demo seed accounts from database
+        demo_emails = ["marketer@company.com", "sarah@company.com", "admin@company.com", "demo@company.com"]
         for demo in demo_emails:
             if demo != admin_email:
                 db.query(User).filter(User.email == demo).delete(synchronize_session=False)
         db.commit()
 
-        # Ensure the single primary Super Admin / Owner account exists
-        admin_user = db.query(User).filter(User.email == admin_email).first()
-        if not admin_user:
-            admin_user = User(
-                id=str(uuid.uuid4()),
-                name=admin_name,
-                email=admin_email,
-                password_hash=hash_password(admin_password),
-                role="admin",
-                created_at=datetime.now(timezone.utc),
-            )
-            db.add(admin_user)
-            db.commit()
-            print(f"[Database] Provisioned primary Super Admin account: {admin_name} ({admin_email})")
-        else:
-            # Guarantee Super Admin role integrity and update credentials if provided in env
-            updated = False
-            if admin_user.role != "admin":
-                admin_user.role = "admin"
-                updated = True
-            if os.getenv("ADMIN_PASSWORD"):
-                admin_user.password_hash = hash_password(admin_password)
+        # Ensure the primary Super Admin account exists if configured via environment variables
+        if admin_email and admin_password:
+            admin_user = db.query(User).filter(User.email == admin_email).first()
+            if not admin_user:
+                admin_user = User(
+                    id=str(uuid.uuid4()),
+                    name=admin_name,
+                    email=admin_email,
+                    password_hash=hash_password(admin_password),
+                    role="admin",
+                    created_at=datetime.now(timezone.utc),
+                )
+                db.add(admin_user)
+                db.commit()
+                print(f"[Database] Provisioned primary Super Admin account: {admin_name} ({admin_email})")
+            else:
+                # Guarantee Super Admin role integrity and update credentials if provided in env
+                updated = False
+                if admin_user.role != "admin":
+                    admin_user.role = "admin"
+                    updated = True
+                if admin_password:
+                    admin_user.password_hash = hash_password(admin_password)
+                    updated = True
+                if os.getenv("ADMIN_NAME") and admin_user.name != admin_name:
+                    admin_user.name = admin_name
+                    updated = True
+                if updated:
+                    db.commit()
                 updated = True
             if os.getenv("ADMIN_NAME") and admin_user.name != admin_name:
                 admin_user.name = admin_name

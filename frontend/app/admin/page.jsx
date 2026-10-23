@@ -18,8 +18,10 @@ import {
     Sparkles,
     CheckCircle2,
     Zap,
+    Loader2,
+    Mail,
 } from 'lucide-react';
-import { fetchStats, fetchHealth, fetchUsers } from '../../utils/api';
+import { fetchStats, fetchHealth, fetchUsers, inviteOperator, deleteOperator } from '../../utils/api';
 
 export default function AdminPage() {
     const { user } = useAuth();
@@ -28,62 +30,118 @@ export default function AdminPage() {
     const [stats, setStats] = useState(null);
     const [health, setHealth] = useState(null);
     const [error, setError] = useState('');
+    const [inviteSuccess, setInviteSuccess] = useState(null);
+    const [isInviting, setIsInviting] = useState(false);
+    const [deletingId, setDeletingId] = useState(null);
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [newCollab, setNewCollab] = useState({ name: '', email: '', role: 'marketer' });
     const [selectedGroqModel, setSelectedGroqModel] = useState('openai/gpt-oss-120b');
 
     const defaultCollaborators = [
-        { id: '1', name: user?.full_name || user?.name || 'Mann Patel', email: user?.email || 'mann@company.com', role: user?.role || 'admin', status: 'Active' },
+        { id: '1', name: user?.full_name || user?.name || 'Administrator', email: user?.email || '', role: user?.role || 'admin', status: 'Active' },
     ];
 
-    useEffect(() => {
-        const loadAdminData = async () => {
-            try {
-                const [statsRes, healthRes, usersRes] = await Promise.allSettled([
-                    fetchStats(),
-                    fetchHealth(),
-                    fetchUsers(),
-                ]);
+    const loadAdminData = async () => {
+        try {
+            const [statsRes, healthRes, usersRes] = await Promise.allSettled([
+                fetchStats(),
+                fetchHealth(),
+                fetchUsers(),
+            ]);
 
-                if (statsRes.status === 'fulfilled') setStats(statsRes.value);
-                if (healthRes.status === 'fulfilled') setHealth(healthRes.value);
-                if (usersRes.status === 'fulfilled' && Array.isArray(usersRes.value) && usersRes.value.length > 0) {
-                    setCollaborators(
-                        usersRes.value.map((u, i) => ({
-                            id: u.id || u.email || i,
-                            name: u.name || (u.email ? u.email.split('@')[0] : `Operator ${i + 1}`),
-                            email: u.email || '',
-                            role: u.role || 'marketer',
-                            status: 'Active',
-                        }))
-                    );
-                } else {
-                    setCollaborators(defaultCollaborators);
-                }
-            } catch (err) {
-                console.error('Failed to load admin telemetry:', err);
-                setError('Could not connect to backend telemetry endpoints.');
+            if (statsRes.status === 'fulfilled') setStats(statsRes.value);
+            if (healthRes.status === 'fulfilled') setHealth(healthRes.value);
+            if (usersRes.status === 'fulfilled' && Array.isArray(usersRes.value) && usersRes.value.length > 0) {
+                setCollaborators(
+                    usersRes.value.map((u, i) => ({
+                        id: u.id || u.email || i,
+                        name: u.name || (u.email ? u.email.split('@')[0] : `Operator ${i + 1}`),
+                        email: u.email || '',
+                        role: u.role || 'marketer',
+                        status: 'Active',
+                    }))
+                );
+            } else {
                 setCollaborators(defaultCollaborators);
             }
-        };
+        } catch (err) {
+            console.error('Failed to load admin telemetry:', err);
+            setError('Could not connect to backend telemetry endpoints.');
+            setCollaborators(defaultCollaborators);
+        }
+    };
 
+    useEffect(() => {
         loadAdminData();
     }, [user]);
 
-    const handleAddCollaborator = (e) => {
+    const handleAddCollaborator = async (e) => {
         e.preventDefault();
         if (!newCollab.name || !newCollab.email) return;
 
-        setCollaborators((prev) => [
-            ...prev,
-            { id: Date.now(), name: newCollab.name, email: newCollab.email, role: newCollab.role, status: 'Active' },
-        ]);
-        setNewCollab({ name: '', email: '', role: 'marketer' });
-        setShowInviteModal(false);
+        setIsInviting(true);
+        setError('');
+        try {
+            const res = await inviteOperator(newCollab);
+            if (res?.user) {
+                setCollaborators((prev) => [
+                    {
+                        id: res.user.id,
+                        name: res.user.name,
+                        email: res.user.email,
+                        role: res.user.role,
+                        status: 'Active',
+                    },
+                    ...prev.filter((c) => c.email.toLowerCase() !== res.user.email.toLowerCase()),
+                ]);
+            }
+            setInviteSuccess({
+                message: `Operator ${newCollab.name} successfully invited! Credentials and workspace link dispatched from ${user?.email || 'Admin'}.`,
+                tempPassword: res?.temporary_password,
+            });
+            setNewCollab({ name: '', email: '', role: 'marketer' });
+            setShowInviteModal(false);
+        } catch (err) {
+            const detail = err.response?.data?.detail || err.message || 'Failed to invite operator.';
+            setError(detail);
+        } finally {
+            setIsInviting(false);
+        }
     };
 
-    const handleRemoveCollaborator = (id) => {
-        setCollaborators((prev) => prev.filter((c) => c.id !== id));
+    const handleRemoveCollaborator = async (target) => {
+        const targetId = target.id;
+        const targetEmail = target.email;
+        const targetName = target.name || targetEmail;
+
+        if (
+            targetEmail?.toLowerCase() === user?.email?.toLowerCase() ||
+            target.role === 'admin' ||
+            target.role === 'owner'
+        ) {
+            alert('Cannot delete the primary Super Admin account.');
+            return;
+        }
+
+        const confirmDelete = window.confirm(
+            `Permanently revoke workspace clearance and operator seat for ${targetName} (${targetEmail})?`
+        );
+        if (!confirmDelete) return;
+
+        setDeletingId(targetId);
+        setError('');
+        try {
+            await deleteOperator(targetId);
+            setCollaborators((prev) => prev.filter((c) => c.id !== targetId));
+            setInviteSuccess({
+                message: `Operator seat for ${targetEmail} has been permanently revoked.`,
+            });
+        } catch (err) {
+            const detail = err.response?.data?.detail || err.message || 'Failed to revoke operator seat.';
+            setError(detail);
+        } finally {
+            setDeletingId(null);
+        }
     };
 
     return (
@@ -116,9 +174,36 @@ export default function AdminPage() {
                     </div>
 
                     {error && (
-                        <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-xs text-rose-300 flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                            <span>{error}</span>
+                        <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-xs text-rose-300 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                                <span>{error}</span>
+                            </div>
+                            <button onClick={() => setError('')} className="text-rose-400 hover:text-rose-200 text-xs">
+                                ✕
+                            </button>
+                        </div>
+                    )}
+
+                    {inviteSuccess && (
+                        <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs text-emerald-300 flex items-start justify-between gap-3 shadow-lg shadow-emerald-500/10">
+                            <div className="flex items-start gap-2.5">
+                                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                                <div className="space-y-1">
+                                    <p className="font-semibold text-emerald-200">{inviteSuccess.message}</p>
+                                    {inviteSuccess.tempPassword && (
+                                        <p className="font-mono text-[11px] text-emerald-400 bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-500/30 inline-block">
+                                            Temporary Access Key: <span className="font-bold text-white">{inviteSuccess.tempPassword}</span>
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setInviteSuccess(null)}
+                                className="text-emerald-400 hover:text-emerald-200 text-xs font-mono cursor-pointer"
+                            >
+                                ✕
+                            </button>
                         </div>
                     )}
 
@@ -161,7 +246,7 @@ export default function AdminPage() {
                                     {collaborators.length} / 10
                                 </h3>
                                 <span className="text-[10px] text-indigo-400 font-medium">
-                                    {10 - collaborators.length} seats available
+                                    {Math.max(0, 10 - collaborators.length)} seats available
                                 </span>
                             </div>
                             <div className="p-3 rounded-2xl bg-violet-500/10 border border-violet-500/20 text-violet-400">
@@ -338,40 +423,65 @@ export default function AdminPage() {
                         </div>
 
                         <div className="space-y-2.5">
-                            {collaborators.map((u, idx) => (
-                                <div
-                                    key={idx}
-                                    className="flex items-center justify-between p-3.5 bg-slate-950/70 border border-slate-800 rounded-2xl text-xs"
-                                >
-                                    <div className="flex items-center space-x-3">
-                                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center font-bold text-white text-xs shadow-sm">
-                                            {(u.name || u.email || 'U').charAt(0).toUpperCase()}
-                                        </div>
-                                        <div>
-                                            <p className="font-semibold text-slate-200">{u.name}</p>
-                                            <p className="text-[11px] text-slate-500">{u.email}</p>
-                                        </div>
-                                    </div>
+                            {collaborators.map((u, idx) => {
+                                const isTargetAdmin =
+                                    u.role === 'admin' ||
+                                    u.role === 'owner' ||
+                                    u.role === 'leader' ||
+                                    (user?.email && u.email?.toLowerCase() === user.email.toLowerCase());
 
-                                    <div className="flex items-center space-x-3">
-                                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-mono capitalize bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                                            {u.role.replace('_', ' ')}
-                                        </span>
-                                        <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md text-[10px]">
-                                            {u.status}
-                                        </span>
-                                        {u.role !== 'leader' && (
-                                            <button
-                                                onClick={() => handleRemoveCollaborator(u.id)}
-                                                className="text-slate-500 hover:text-rose-400 p-1 transition cursor-pointer"
-                                                title="Revoke seat"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        )}
+                                return (
+                                    <div
+                                        key={u.id || idx}
+                                        className="flex items-center justify-between p-3.5 bg-slate-950/70 border border-slate-800 rounded-2xl text-xs"
+                                    >
+                                        <div className="flex items-center space-x-3">
+                                            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center font-bold text-white text-xs shadow-sm">
+                                                {(u.name || u.email || 'U').charAt(0).toUpperCase()}
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <p className="font-semibold text-slate-200">{u.name}</p>
+                                                    {u.email?.toLowerCase() === user?.email?.toLowerCase() && (
+                                                        <span className="text-[9px] font-mono bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded">
+                                                            You (Super Admin)
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-[11px] text-slate-500">{u.email}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center space-x-3">
+                                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-mono capitalize bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                                {u.role.replace('_', ' ')}
+                                            </span>
+                                            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md text-[10px]">
+                                                {u.status || 'Active'}
+                                            </span>
+
+                                            {isTargetAdmin ? (
+                                                <span className="text-[10px] text-amber-400 font-mono font-medium px-2 py-0.5 bg-amber-400/10 border border-amber-400/20 rounded-md">
+                                                    Super Admin Clearance
+                                                </span>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleRemoveCollaborator(u)}
+                                                    disabled={deletingId === u.id}
+                                                    className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition cursor-pointer disabled:opacity-50"
+                                                    title={`Revoke seat for ${u.name}`}
+                                                >
+                                                    {deletingId === u.id ? (
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                                                    ) : (
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    )}
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 </main>
@@ -380,17 +490,34 @@ export default function AdminPage() {
                 {showInviteModal && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
                         <div className="bg-slate-900 border border-indigo-500/30 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 glow-indigo">
-                            <h3 className="text-sm font-bold text-white">Invite Workspace Operator</h3>
+                            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                    <Mail className="w-4 h-4 text-indigo-400" />
+                                    <span>Invite Workspace Operator</span>
+                                </h3>
+                                <button
+                                    onClick={() => setShowInviteModal(false)}
+                                    className="text-slate-400 hover:text-slate-200 text-xs"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <p className="text-[11px] text-slate-400">
+                                Enter the operator details below. The operator will automatically receive an invitation email containing their access clearance and temporary credentials dispatched from your administrator email (<span className="text-indigo-300 font-mono">{user?.email || 'Administrator'}</span>).
+                            </p>
+
                             <form onSubmit={handleAddCollaborator} className="space-y-3 text-xs">
                                 <div>
                                     <label className="block text-[11px] font-medium text-slate-300 mb-1">Full Name</label>
                                     <input
                                         type="text"
                                         required
+                                        disabled={isInviting}
                                         value={newCollab.name}
                                         onChange={(e) => setNewCollab((prev) => ({ ...prev, name: e.target.value }))}
                                         placeholder="Jane Doe"
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
                                     />
                                 </div>
                                 <div>
@@ -398,18 +525,20 @@ export default function AdminPage() {
                                     <input
                                         type="email"
                                         required
+                                        disabled={isInviting}
                                         value={newCollab.email}
                                         onChange={(e) => setNewCollab((prev) => ({ ...prev, email: e.target.value }))}
                                         placeholder="jane@company.com"
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
                                     />
                                 </div>
                                 <div>
                                     <label className="block text-[11px] font-medium text-slate-300 mb-1">Role Permissions</label>
                                     <select
                                         value={newCollab.role}
+                                        disabled={isInviting}
                                         onChange={(e) => setNewCollab((prev) => ({ ...prev, role: e.target.value }))}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
                                     >
                                         <option value="marketer">Marketer (Campaigns & Copy)</option>
                                         <option value="backend_dev">Backend / RAG Developer</option>
@@ -420,16 +549,25 @@ export default function AdminPage() {
                                 <div className="pt-2 flex gap-2">
                                     <button
                                         type="button"
+                                        disabled={isInviting}
                                         onClick={() => setShowInviteModal(false)}
-                                        className="flex-1 py-2 rounded-xl border border-slate-800 hover:bg-slate-800 text-slate-400 text-xs font-medium cursor-pointer"
+                                        className="flex-1 py-2 rounded-xl border border-slate-800 hover:bg-slate-800 text-slate-400 text-xs font-medium cursor-pointer disabled:opacity-50"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         type="submit"
-                                        className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow cursor-pointer"
+                                        disabled={isInviting}
+                                        className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                                     >
-                                        Send Invite
+                                        {isInviting ? (
+                                            <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Dispatching Invite...</span>
+                                            </>
+                                        ) : (
+                                            <span>Send Invite & Mail</span>
+                                        )}
                                     </button>
                                 </div>
                             </form>

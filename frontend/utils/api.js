@@ -126,15 +126,30 @@ export const fetchPublishHistory = async () => {
 // ── Collaborators & Users ────────────────────────────────────────
 export const fetchCollaborators = async () => {
     try {
-        const res = await API.get('/auth/users');
+        const res = await API.get('/admin/users');
         return res.data || [];
-    } catch (err) {
-        console.warn('Backend /auth/users unreachable:', err?.message || err);
-        return [];
+    } catch (adminErr) {
+        try {
+            const res = await API.get('/auth/users');
+            return res.data || [];
+        } catch (err) {
+            console.warn('Backend user endpoints unreachable:', err?.message || err);
+            return [];
+        }
     }
 };
 
 export const fetchUsers = fetchCollaborators;
+
+export const inviteOperator = async (operatorData) => {
+    const res = await API.post('/admin/users/invite', operatorData);
+    return res.data;
+};
+
+export const deleteOperator = async (userId) => {
+    const res = await API.delete(`/admin/users/${userId}`);
+    return res.data;
+};
 
 // ── Workspace State Persistence ──────────────────────────────────
 export const fetchUserWorkspace = async (email) => {

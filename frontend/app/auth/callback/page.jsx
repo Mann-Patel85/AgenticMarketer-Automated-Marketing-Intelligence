@@ -4,10 +4,12 @@ import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Bot, Loader2, AlertCircle } from 'lucide-react';
 import API from '../../../utils/api';
+import { useAuth } from '../../../context/AuthContext';
 
 function CallbackContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const { setAuthSession } = useAuth();
     const [statusText, setStatusText] = useState('Verifying Google Clearance...');
     const [errorMessage, setErrorMessage] = useState(null);
 
@@ -40,40 +42,52 @@ function CallbackContent() {
 
         const handleAuthSuccess = async () => {
             try {
-                // 1. Store token in localStorage and cookies
-                localStorage.setItem('token', token);
-                if (typeof document !== 'undefined') {
-                    document.cookie = `token=${token}; path=/; max-age=604800; SameSite=Lax`;
-                }
-
                 setStatusText('Synchronizing Workspace Identity...');
 
-                // 2. Fetch authenticated user profile
-                const res = await API.get('/auth/me', {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                // 1. Fetch authenticated user profile using activeToken
+                let profile = null;
+                try {
+                    const res = await API.get('/auth/me', {
+                        headers: { Authorization: `Bearer ${activeToken}` },
+                    });
+                    profile = res.data;
+                } catch (fetchErr) {
+                    console.warn('Profile fetch fallback:', fetchErr);
+                }
 
-                if (res.data) {
-                    localStorage.setItem('agentic_user', JSON.stringify(res.data));
+                if (!profile) {
+                    profile = {
+                        name: 'Workspace Operator',
+                        email: 'operator@agenticmarketer.com',
+                        role: 'user',
+                    };
+                }
+
+                // 2. Hydrate AuthContext state, localStorage, and cookie
+                if (setAuthSession) {
+                    setAuthSession(activeToken, profile);
+                } else {
+                    localStorage.setItem('token', activeToken);
+                    localStorage.setItem('agentic_user', JSON.stringify(profile));
+                    if (typeof document !== 'undefined') {
+                        document.cookie = `token=${activeToken}; path=/; max-age=604800; SameSite=Lax`;
+                    }
                 }
 
                 setStatusText('Access Granted. Launching Swarm Dashboard...');
 
-                // 3. Smooth transition to dashboard
+                // 3. Navigate cleanly to dashboard
                 setTimeout(() => {
-                    // Trigger storage event so open tabs/context immediately updates
-                    window.dispatchEvent(new Event('storage'));
-                    router.replace('/dashboard');
-                }, 400);
+                    window.location.replace('/dashboard');
+                }, 200);
             } catch (err) {
-                console.warn('Profile hydration warning:', err);
-                // Even if /auth/me fails, token is valid, route to dashboard
-                router.replace('/dashboard');
+                console.warn('OAuth callback hydration error:', err);
+                window.location.replace('/dashboard');
             }
         };
 
         handleAuthSuccess();
-    }, [searchParams, router]);
+    }, [searchParams, router, setAuthSession]);
 
     return (
         <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">

@@ -13,7 +13,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import httpx
 from pydantic import BaseModel, Field, EmailStr
-from fastapi import APIRouter, HTTPException, Depends, status, Request
+from fastapi import APIRouter, HTTPException, Depends, status, Request, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -95,16 +95,32 @@ class AuthTokenResponse(BaseModel):
     user: UserProfileResponse
 
 
+def _get_admin_emails() -> set:
+    """Resolves authorized admin emails strictly from environment variables without code leaks."""
+    emails = set()
+    primary = os.getenv("ADMIN_EMAIL", "").lower().strip()
+    if primary:
+        emails.add(primary)
+    extra = os.getenv("ADMIN_EMAILS", "").lower().strip()
+    if extra:
+        emails.update(e.strip() for e in extra.split(",") if e.strip())
+    return emails
+
+
 # ── Production Credentials Endpoints ─────────────────────────────────
 
 @router.post("/register", response_model=AuthTokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
+async def register(
+    payload: UserRegisterRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     """
     Register a new user in the AgenticMarketer workspace.
     Enforces the strict MAX_OPERATOR_SEATS (10) capacity cap.
     """
     email_key = payload.email.lower().strip()
-    admin_email = os.getenv("ADMIN_EMAIL", "mann@company.com").lower().strip()
+    admin_emails = _get_admin_emails()
 
     existing_user = db.query(User).filter(User.email == email_key).first()
     if existing_user:
@@ -115,13 +131,13 @@ async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
 
     # 1. Enforce 10-Operator Seat Limit
     current_seats = db.query(User).count()
-    if current_seats >= MAX_OPERATOR_SEATS and email_key != admin_email:
+    if current_seats >= MAX_OPERATOR_SEATS and email_key not in admin_emails:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Operator seat limit reached ({MAX_OPERATOR_SEATS}/{MAX_OPERATOR_SEATS} seats filled). Contact the administrator for workspace clearance.",
         )
 
-    assigned_role = "admin" if email_key == admin_email else "user"
+    assigned_role = "admin" if email_key in admin_emails else "user"
     user_id = str(uuid.uuid4())
     new_user = User(
         id=user_id,
@@ -154,12 +170,8 @@ async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
     db.add(session_record)
     db.commit()
 
-    # Trigger welcome email (non-blocking)
-    try:
-        import asyncio
-        asyncio.create_task(send_welcome_email(email_key, new_user.name))
-    except Exception as exc:
-        print(f"[Auth] Warning: Could not enqueue welcome email: {exc}")
+    # Trigger welcome email via reliable FastAPI BackgroundTasks
+    background_tasks.add_task(send_welcome_email, email_key, new_user.name)
 
     return AuthTokenResponse(
         access_token=token,
@@ -215,7 +227,12 @@ async def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/forgot-password")
-async def forgot_password(payload: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)):
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     """Dispatches a secure password reset link via SMTP / Resend."""
     email_key = payload.email.lower().strip()
     frontend_url = _get_frontend_url(request)
@@ -227,11 +244,7 @@ async def forgot_password(payload: ForgotPasswordRequest, request: Request, db: 
             expires_delta=timedelta(hours=1),
         )
         reset_url = f"{frontend_url}/login?reset_token={reset_token}"
-        try:
-            import asyncio
-            asyncio.create_task(send_password_reset_email(email_key, reset_url))
-        except Exception as exc:
-            print(f"[Auth] Warning: Could not dispatch password reset email: {exc}")
+        background_tasks.add_task(send_password_reset_email, email_key, reset_url)
 
     return {
         "message": f"If an account exists for {email_key}, password recovery instructions have been dispatched.",
@@ -278,6 +291,7 @@ async def google_login(request: Request):
 @router.get("/google/callback")
 async def google_callback(
     request: Request,
+    background_tasks: BackgroundTasks,
     code: Optional[str] = None,
     state: Optional[str] = None,
     error: Optional[str] = None,
@@ -350,19 +364,19 @@ async def google_callback(
     if not google_email:
         return RedirectResponse(url=f"{frontend_url}/login?error=No+email+associated+with+Google+account.")
 
-    admin_email = os.getenv("ADMIN_EMAIL", "mann@company.com").lower().strip()
+    admin_emails = _get_admin_emails()
     user = db.query(User).filter(User.email == google_email).first()
 
     # ── Seat Cap Enforcement for New Registrations ─────────────────────
     if not user:
         current_seats = db.query(User).count()
-        # If total seats >= 10 and not the primary admin, reject immediately
-        if current_seats >= MAX_OPERATOR_SEATS and google_email != admin_email:
+        # If total seats >= 10 and not an admin, reject immediately
+        if current_seats >= MAX_OPERATOR_SEATS and google_email not in admin_emails:
             print(f"[Auth Security] Google OAuth rejected for {google_email}: Workspace seat limit reached ({current_seats}/{MAX_OPERATOR_SEATS}).")
             return RedirectResponse(url=f"{frontend_url}/login?error=seat_limit_reached")
 
         # Provision new operator
-        assigned_role = "admin" if google_email == admin_email else "user"
+        assigned_role = "admin" if google_email in admin_emails else "user"
         user_id = str(uuid.uuid4())
         user = User(
             id=user_id,
@@ -376,12 +390,8 @@ async def google_callback(
         db.commit()
         db.refresh(user)
 
-        # Send welcome email asynchronously
-        try:
-            import asyncio
-            asyncio.create_task(send_welcome_email(google_email, google_name))
-        except Exception as exc:
-            print(f"[OAuth] Warning: Could not dispatch welcome email: {exc}")
+        # Send welcome email asynchronously via reliable BackgroundTasks
+        background_tasks.add_task(send_welcome_email, google_email, google_name)
 
     # ── Issue Signed Platform JWT ─────────────────────────────────────
     jwt_token = create_access_token({
@@ -449,7 +459,7 @@ async def get_users(
 ):
     """
     Retrieve list of workspace team members.
-    Strict RBAC: Exclusively restricted to Super Admin (Mann Patel).
+    Strict RBAC: Exclusively restricted to Super Admin / Owner.
     Non-admin callers receive 403 Forbidden.
     """
     users = db.query(User).all()
