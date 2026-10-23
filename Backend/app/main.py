@@ -13,7 +13,9 @@ from fastapi import FastAPI, Response, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 
+import os
 from backend.app.core.config import get_settings
+from backend.app.database import init_db
 from backend.app.routers.auth import router as auth_router
 from backend.app.routers.rag import router as rag_router
 from backend.app.routers.swarm import router as swarm_router
@@ -29,6 +31,11 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     print(f"[AgenticMarketer] Backend starting up... App: {settings.APP_NAME} v{settings.APP_VERSION}")
     print(f"[AgenticMarketer] Storage Directories initialized at: {settings.DATA_DIRECTORY}")
+    try:
+        init_db()
+        print("[AgenticMarketer] Database schema and seed verification complete.")
+    except Exception as e:
+        print(f"[AgenticMarketer DB Warning] Could not initialize database schema: {e}")
     yield
     print("[AgenticMarketer] Backend shutting down cleanly.")
 
@@ -53,10 +60,22 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": f"Internal server error: {str(exc)}", "path": str(request.url.path)},
     )
 
-# ── CORS Middleware ──────────────────────────────────────────────────
+# ── Dynamic CORS Policy for Production (Vercel & Render) ─────────────
+allowed_origins = [
+    os.getenv("FRONTEND_PROD_URL", "https://your-agenticmarketer.vercel.app"),
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+frontend_prod = os.getenv("FRONTEND_PROD_URL")
+if frontend_prod and frontend_prod not in allowed_origins:
+    allowed_origins.append(frontend_prod)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

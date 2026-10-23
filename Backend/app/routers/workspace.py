@@ -2,47 +2,20 @@
 AgenticMarketer Backend — User Workspace & Campaign State Persistence Router.
 Ensures that all user campaign directives, generated copy, high-resolution visuals,
 SEO metrics, omnichannel publishing configurations, and execution terminal logs
-are automatically preserved and restored across user sessions.
+are automatically preserved and restored in PostgreSQL (Neon DB).
 """
 
-import json
 import time
+import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Request, Query, Depends
+from sqlalchemy.orm import Session
 
-from backend.app.core.config import get_settings
+from backend.app.database import get_db, Workspace
 
 router = APIRouter(prefix="/api/workspace", tags=["Workspace"])
-
-WORKSPACES_FILE = Path(get_settings().DATA_DIRECTORY) / "workspaces.json"
-
-
-def _load_workspaces() -> Dict[str, Dict[str, Any]]:
-    """Loads all user workspaces from JSON disk storage."""
-    if not WORKSPACES_FILE.exists():
-        WORKSPACES_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(WORKSPACES_FILE, "w", encoding="utf-8") as f:
-            json.dump({}, f, indent=2)
-        return {}
-
-    try:
-        with open(WORKSPACES_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"[Workspace Storage Warning] Failed to read {WORKSPACES_FILE}: {e}")
-        return {}
-
-
-def _save_workspaces(data: Dict[str, Dict[str, Any]]) -> None:
-    """Safely saves workspace dictionary to disk storage."""
-    WORKSPACES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    temp_file = WORKSPACES_FILE.with_suffix(".tmp")
-    with open(temp_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    temp_file.replace(WORKSPACES_FILE)
 
 
 def _resolve_user_email(request: Request, email_param: Optional[str] = None) -> str:
@@ -91,21 +64,27 @@ class WorkspaceSaveRequest(BaseModel):
 async def get_workspace(
     request: Request,
     email: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
 ):
-    """Retrieve saved workspace state and campaign history for the user."""
+    """Retrieve saved workspace state and campaign history for the user from Neon DB."""
     user_email = _resolve_user_email(request, email)
-    workspaces = _load_workspaces()
-    user_record = workspaces.get(user_email, {})
+    record = db.query(Workspace).filter(Workspace.user_email == user_email).first()
 
-    workspace_data = user_record.get("workspace", {})
-    history_data = user_record.get("history", [])
+    if not record:
+        return {
+            "status": "success",
+            "email": user_email,
+            "workspace": {},
+            "history": [],
+            "has_saved_data": False,
+        }
 
     return {
         "status": "success",
         "email": user_email,
-        "workspace": workspace_data,
-        "history": history_data,
-        "has_saved_data": bool(workspace_data),
+        "workspace": record.workspace_data or {},
+        "history": record.history_data or [],
+        "has_saved_data": bool(record.workspace_data),
     }
 
 
@@ -113,23 +92,28 @@ async def get_workspace(
 async def save_workspace(
     payload: WorkspaceSaveRequest,
     request: Request,
+    db: Session = Depends(get_db),
 ):
-    """Persist current user workspace state and update campaign history."""
+    """Persist current user workspace state and update campaign history in Neon DB."""
     user_email = _resolve_user_email(request, payload.email)
-    workspaces = _load_workspaces()
-
-    if user_email not in workspaces:
-        workspaces[user_email] = {
-            "workspace": {},
-            "history": [],
-        }
+    record = db.query(Workspace).filter(Workspace.user_email == user_email).first()
 
     now_iso = datetime.now(timezone.utc).isoformat()
-
     workspace_dict = payload.model_dump(exclude={"email", "is_completed"}, exclude_none=False)
     workspace_dict["last_updated"] = now_iso
 
-    workspaces[user_email]["workspace"] = workspace_dict
+    if not record:
+        record = Workspace(
+            id=str(uuid.uuid4()),
+            user_email=user_email,
+            workspace_data=workspace_dict,
+            history_data=[],
+            updated_at=datetime.now(timezone.utc),
+        )
+        db.add(record)
+    else:
+        record.workspace_data = workspace_dict
+        record.updated_at = datetime.now(timezone.utc)
 
     # If this campaign was finished or generated output exists, record a history snapshot
     if payload.is_completed and (payload.generatedOutput or payload.generatedImageUrl):
@@ -143,20 +127,18 @@ async def save_workspace(
             "completed_at": now_iso,
             "preview_snippet": (payload.generatedOutput or "")[:180],
         }
-        history_list = workspaces[user_email].setdefault("history", [])
-        # Prevent immediate duplicates
-        if not history_list or history_list[0].get("title") != history_item["title"]:
-            history_list.insert(0, history_item)
-            # Retain top 30 campaigns
-            workspaces[user_email]["history"] = history_list[:30]
+        current_history = list(record.history_data or [])
+        if not current_history or current_history[0].get("title") != history_item["title"]:
+            current_history.insert(0, history_item)
+            record.history_data = current_history[:30]
 
-    _save_workspaces(workspaces)
+    db.commit()
 
     return {
         "status": "success",
         "email": user_email,
         "saved_at": now_iso,
-        "history_count": len(workspaces[user_email].get("history", [])),
+        "history_count": len(record.history_data or []),
     }
 
 
@@ -164,14 +146,16 @@ async def save_workspace(
 async def reset_workspace(
     request: Request,
     email: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
 ):
-    """Resets the current active campaign draft fields, preserving campaign history."""
+    """Resets the active campaign draft fields, preserving campaign history in Neon DB."""
     user_email = _resolve_user_email(request, email)
-    workspaces = _load_workspaces()
+    record = db.query(Workspace).filter(Workspace.user_email == user_email).first()
 
-    if user_email in workspaces:
-        workspaces[user_email]["workspace"] = {}
-        _save_workspaces(workspaces)
+    if record:
+        record.workspace_data = {}
+        record.updated_at = datetime.now(timezone.utc)
+        db.commit()
 
     return {
         "status": "success",
@@ -184,13 +168,14 @@ async def reset_workspace(
 async def get_workspace_history(
     request: Request,
     email: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
 ):
-    """Retrieve full campaign history archives for user."""
+    """Retrieve full campaign history archives for user from Neon DB."""
     user_email = _resolve_user_email(request, email)
-    workspaces = _load_workspaces()
-    history = workspaces.get(user_email, {}).get("history", [])
+    record = db.query(Workspace).filter(Workspace.user_email == user_email).first()
+    history = record.history_data if record else []
     return {
         "status": "success",
         "email": user_email,
-        "history": history,
+        "history": history or [],
     }

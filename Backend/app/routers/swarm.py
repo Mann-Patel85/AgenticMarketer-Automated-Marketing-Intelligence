@@ -1,20 +1,23 @@
 """
 AgenticMarketer Backend — Swarm Orchestration Endpoints.
 Provides:
-1. POST /api/swarm/launch: Trigger an asynchronous 5-agent marketing swarm
-2. GET /api/swarm/stream/{run_id}: Real-time Server-Sent Events (SSE) log & status stream
-3. POST /api/swarm/run-sync: Synchronous execution returning the final campaign bundle
+1. POST /api/swarm/launch: Trigger an asynchronous 6-agent marketing swarm
+2. GET /api/swarm/stream/{run_id}: Real-time Server-Sent Events (SSE) log & status stream (with Render proxy unbuffering)
+3. POST /api/swarm/run-sync: Synchronous execution returning the final campaign bundle & archiving to DB
 4. POST /api/swarm/abort/{run_id}: Cancel a running swarm job
 """
 
 import uuid
 import json
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, HTTPException, status, Request
+from fastapi import APIRouter, HTTPException, status, Request, Depends
 from sse_starlette.sse import EventSourceResponse
+from sqlalchemy.orm import Session
 
 from backend.app.agents.swarm_pipeline import SwarmPipeline
+from backend.app.database import get_db, SessionLocal, CampaignRun
 
 router = APIRouter(prefix="/api/swarm", tags=["Swarm Orchestration"])
 
@@ -40,10 +43,33 @@ class SwarmLaunchResponse(BaseModel):
     stream_url: str
 
 
+def _archive_campaign_run(run_id: str, payload: dict, result: dict, logs: list):
+    """Safely archive campaign run metadata and logs into database."""
+    try:
+        with SessionLocal() as db:
+            existing = db.query(CampaignRun).filter(CampaignRun.id == run_id).first()
+            if not existing:
+                record = CampaignRun(
+                    id=run_id,
+                    goal=payload.get("goal", ""),
+                    audience=payload.get("audience", ""),
+                    tone=payload.get("tone", ""),
+                    status="completed",
+                    payload=payload,
+                    result=result,
+                    logs=logs,
+                    created_at=datetime.now(timezone.utc),
+                )
+                db.add(record)
+                db.commit()
+    except Exception as e:
+        print(f"[Database Warning] Could not archive campaign run '{run_id}': {e}")
+
+
 @router.post("/launch", response_model=SwarmLaunchResponse, status_code=status.HTTP_202_ACCEPTED)
 async def launch_swarm(payload: SwarmLaunchRequest):
     """
-    Launch an autonomous 5-agent marketing swarm run.
+    Launch an autonomous 6-agent marketing swarm run.
     Returns a run_id and stream_url for live SSE telemetry.
     """
     run_id = f"run_{uuid.uuid4().hex[:12]}"
@@ -69,6 +95,7 @@ async def stream_swarm_execution(run_id: str, request: Request):
     """
     Server-Sent Events (SSE) endpoint streaming real-time agent statuses,
     logs, and final campaign outputs directly to the browser.
+    Includes X-Accel-Buffering and Cache-Control headers for Render reverse proxy support.
     """
     run_data = ACTIVE_RUNS.get(run_id)
     if not run_data:
@@ -78,30 +105,50 @@ async def stream_swarm_execution(run_id: str, request: Request):
         )
 
     pipeline: SwarmPipeline = run_data["pipeline"]
+    payload: dict = run_data.get("payload", {})
+
+    collected_logs = []
+    final_output = {}
 
     async def event_generator():
+        nonlocal final_output
         try:
             async for event in pipeline.execute_stream():
-                # Client disconnected check
                 if await request.is_disconnected():
                     break
+
+                ev_type = event.get("type", "message")
+                if ev_type == "log":
+                    collected_logs.append(event)
+                elif ev_type == "final_result":
+                    final_output = event.get("data", {})
+
                 yield {
-                    "event": event.get("type", "message"),
+                    "event": ev_type,
                     "data": json.dumps(event),
                 }
         finally:
-            # Clean up run once finished
             if run_id in ACTIVE_RUNS:
                 ACTIVE_RUNS.pop(run_id, None)
+            # Archive run to database
+            if final_output:
+                _archive_campaign_run(run_id, payload, final_output, collected_logs)
 
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(
+        event_generator(),
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.post("/run-sync")
 async def run_swarm_sync(payload: SwarmLaunchRequest):
     """
     Synchronous execution endpoint for testing and direct API integration.
-    Waits for all 5 agents and returns the complete final campaign bundle.
+    Waits for all agents, archives run in database, and returns the complete final campaign bundle.
     """
     run_id = f"sync_{uuid.uuid4().hex[:8]}"
     pipeline = SwarmPipeline(run_id, payload.model_dump())
@@ -136,6 +183,8 @@ async def run_swarm_sync(payload: SwarmLaunchRequest):
                 "seo_metrics": {"readability_score": 85, "intent_match": "90%"},
                 "publishing_manifests": [],
             }
+
+    _archive_campaign_run(run_id, payload.model_dump(), final_result or {}, all_logs)
 
     return {
         "run_id": run_id,

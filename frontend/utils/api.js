@@ -1,12 +1,20 @@
 import axios from 'axios';
 
-// Direct connection to FastAPI backend server on port 8000 (auto-detects LAN IP when accessed on mobile/tablet)
+// Production & Local API Base URL configuration
+const sanitizeUrl = (url) => (url ? url.trim().replace(/\/+$/, '') : '');
+const envBackendUrl = sanitizeUrl(process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL);
+
+// Base origin for media/asset URLs
 export const BACKEND_SERVER_URL =
-    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    (envBackendUrl ? envBackendUrl.replace(/\/api$/, '') : '') ||
     (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
         ? `${window.location.protocol}//${window.location.hostname}:8000`
         : 'http://localhost:8000');
-export const API_BASE_URL = `${BACKEND_SERVER_URL}/api`;
+
+// API base endpoint for Axios calls
+export const API_BASE_URL = envBackendUrl
+    ? (envBackendUrl.endsWith('/api') ? envBackendUrl : `${envBackendUrl}/api`)
+    : `${BACKEND_SERVER_URL}/api`;
 
 const API = axios.create({
     baseURL: API_BASE_URL,

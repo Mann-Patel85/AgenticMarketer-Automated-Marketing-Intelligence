@@ -1,17 +1,17 @@
 """
 AgenticMarketer Backend — Authentication Router.
 Handles registration, login, and current user profile retrieval with JWT and RBAC.
-Persists users to JSON file storage in backend/data/users.json.
+Persists users to PostgreSQL (Neon DB) / SQLAlchemy tables.
 """
 
-import json
 import uuid
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, EmailStr, Field
 from fastapi import APIRouter, HTTPException, Depends, status
+from sqlalchemy.orm import Session
 
-from backend.app.core.config import get_settings
+from backend.app.database import get_db, User, UserSession
 from backend.app.core.security import (
     hash_password,
     verify_password,
@@ -20,57 +20,6 @@ from backend.app.core.security import (
 )
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
-
-# File path for persistent user storage
-USERS_FILE = Path(get_settings().DATA_DIRECTORY) / "users.json"
-
-
-def _load_users() -> Dict[str, Dict[str, Any]]:
-    """Load users from JSON storage or initialize with default demo accounts."""
-    if not USERS_FILE.exists():
-        initial_users = {
-            "mann@company.com": {
-                "id": str(uuid.uuid4()),
-                "name": "Mann Patel",
-                "email": "mann@company.com",
-                "password_hash": hash_password("admin123"),
-                "role": "leader",
-                "created_at": "2025-01-01T00:00:00Z",
-            },
-            "admin@company.com": {
-                "id": str(uuid.uuid4()),
-                "name": "System Admin",
-                "email": "admin@company.com",
-                "password_hash": hash_password("admin123"),
-                "role": "admin",
-                "created_at": "2025-01-01T00:00:00Z",
-            },
-            "marketer@company.com": {
-                "id": str(uuid.uuid4()),
-                "name": "Sarah Jenkins",
-                "email": "marketer@company.com",
-                "password_hash": hash_password("market123"),
-                "role": "marketer",
-                "created_at": "2025-01-01T00:00:00Z",
-            },
-        }
-        USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(initial_users, f, indent=2)
-        return initial_users
-
-    try:
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def _save_users(users: Dict[str, Dict[str, Any]]) -> None:
-    """Save users dictionary back to JSON storage."""
-    USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, indent=2)
 
 
 # ── Pydantic Request / Response Schemas ──────────────────────────────
@@ -100,13 +49,14 @@ class AuthTokenResponse(BaseModel):
 
 
 # ── Routes ──────────────────────────────────────────────────────────
+
 @router.post("/register", response_model=AuthTokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(payload: UserRegisterRequest):
+async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
     """Register a new user in the AgenticMarketer workspace."""
-    users = _load_users()
     email_key = payload.email.lower().strip()
 
-    if email_key in users:
+    existing_user = db.query(User).filter(User.email == email_key).first()
+    if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A user with this email address already exists.",
@@ -116,31 +66,43 @@ async def register(payload: UserRegisterRequest):
     allowed_roles = ["leader", "admin", "marketer", "backend_dev", "frontend_dev", "user"]
     assigned_role = payload.role.lower() if payload.role and payload.role.lower() in allowed_roles else "marketer"
 
-    new_user = {
-        "id": user_id,
-        "name": payload.name.strip(),
-        "email": email_key,
-        "password_hash": hash_password(payload.password),
-        "role": assigned_role,
-    }
+    new_user = User(
+        id=user_id,
+        name=payload.name.strip(),
+        email=email_key,
+        password_hash=hash_password(payload.password),
+        role=assigned_role,
+        created_at=datetime.now(timezone.utc),
+    )
 
-    users[email_key] = new_user
-    _save_users(users)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
 
     # Issue JWT token
     token = create_access_token({
         "sub": email_key,
-        "name": new_user["name"],
+        "name": new_user.name,
         "role": assigned_role,
         "uid": user_id,
     })
+
+    # Record active session in database
+    session_record = UserSession(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        token_hash=token[-16:],
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(session_record)
+    db.commit()
 
     return AuthTokenResponse(
         access_token=token,
         token_type="bearer",
         user=UserProfileResponse(
             id=user_id,
-            name=new_user["name"],
+            name=new_user.name,
             email=email_key,
             role=assigned_role,
         ),
@@ -148,13 +110,12 @@ async def register(payload: UserRegisterRequest):
 
 
 @router.post("/login", response_model=AuthTokenResponse)
-async def login(payload: UserLoginRequest):
+async def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
     """Authenticate credentials and return a signed JWT access token."""
-    users = _load_users()
     email_key = payload.email.lower().strip()
 
-    user = users.get(email_key)
-    if not user or not verify_password(payload.password, user.get("password_hash", "")):
+    user = db.query(User).filter(User.email == email_key).first()
+    if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
@@ -163,32 +124,43 @@ async def login(payload: UserLoginRequest):
 
     token = create_access_token({
         "sub": email_key,
-        "name": user["name"],
-        "role": user["role"],
-        "uid": user["id"],
+        "name": user.name,
+        "role": user.role,
+        "uid": user.id,
     })
+
+    # Track session
+    session_record = UserSession(
+        id=str(uuid.uuid4()),
+        user_id=user.id,
+        token_hash=token[-16:],
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(session_record)
+    db.commit()
 
     return AuthTokenResponse(
         access_token=token,
         token_type="bearer",
         user=UserProfileResponse(
-            id=user["id"],
-            name=user["name"],
+            id=user.id,
+            name=user.name,
             email=email_key,
-            role=user["role"],
+            role=user.role,
         ),
     )
 
 
 @router.get("/me", response_model=UserProfileResponse)
-async def get_me(current_user: dict = Depends(get_current_user)):
+async def get_me(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Retrieve profile and permissions for current authenticated user."""
-    users = _load_users()
-    email = current_user.get("sub", "")
-    user = users.get(email)
+    email = current_user.get("sub", "").lower().strip()
+    user = db.query(User).filter(User.email == email).first()
 
     if not user:
-        # Return claims from token if user record not found in local file
         return UserProfileResponse(
             id=current_user.get("uid", str(uuid.uuid4())),
             name=current_user.get("name", "User"),
@@ -197,24 +169,26 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         )
 
     return UserProfileResponse(
-        id=user["id"],
-        name=user["name"],
-        email=user["email"],
-        role=user["role"],
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        role=user.role,
     )
 
 
 @router.get("/users", response_model=List[UserProfileResponse])
-async def get_users(current_user: dict = Depends(get_current_user)):
+async def get_users(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Retrieve list of workspace team members (for workspace management)."""
-    users = _load_users()
+    users = db.query(User).all()
     return [
         UserProfileResponse(
-            id=u.get("id", str(uuid.uuid4())),
-            name=u.get("name", "User"),
-            email=u.get("email", email),
-            role=u.get("role", "marketer"),
+            id=u.id,
+            name=u.name,
+            email=u.email,
+            role=u.role,
         )
-        for email, u in users.items()
+        for u in users
     ]
-

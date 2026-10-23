@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
 
+    # ── Database (Neon PostgreSQL) ───────────────────────────────────
+    DATABASE_URL: str = ""
+
+    # ── Production Frontend URL ──────────────────────────────────────
+    FRONTEND_PROD_URL: str = ""
+
     # ── Groq Cloud LPU AI (Primary High-Speed LLM Engine) ────────────
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "openai/gpt-oss-120b"
