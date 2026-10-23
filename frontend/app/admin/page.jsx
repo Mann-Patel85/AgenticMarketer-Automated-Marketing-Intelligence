@@ -28,8 +28,15 @@ export default function AdminPage() {
     const [stats, setStats] = useState(null);
     const [health, setHealth] = useState(null);
     const [error, setError] = useState('');
+    const [showInviteModal, setShowInviteModal] = useState(false);
     const [newCollab, setNewCollab] = useState({ name: '', email: '', role: 'marketer' });
     const [selectedGroqModel, setSelectedGroqModel] = useState('openai/gpt-oss-120b');
+
+    const defaultCollaborators = [
+        { id: '1', name: user?.full_name || user?.name || 'Mann Patel', email: user?.email || 'mann@company.com', role: user?.role || 'leader', status: 'Active' },
+        { id: '2', name: 'Growth Marketer', email: 'marketer@company.com', role: 'marketer', status: 'Active' },
+        { id: '3', name: 'DevOps Administrator', email: 'admin@company.com', role: 'admin', status: 'Active' },
+    ];
 
     useEffect(() => {
         const loadAdminData = async () => {
@@ -42,25 +49,28 @@ export default function AdminPage() {
 
                 if (statsRes.status === 'fulfilled') setStats(statsRes.value);
                 if (healthRes.status === 'fulfilled') setHealth(healthRes.value);
-                if (usersRes.status === 'fulfilled' && Array.isArray(usersRes.value)) {
+                if (usersRes.status === 'fulfilled' && Array.isArray(usersRes.value) && usersRes.value.length > 0) {
                     setCollaborators(
                         usersRes.value.map((u, i) => ({
-                            id: u.email || i,
-                            name: u.name || u.email.split('@')[0],
-                            email: u.email,
+                            id: u.id || u.email || i,
+                            name: u.name || (u.email ? u.email.split('@')[0] : `Operator ${i + 1}`),
+                            email: u.email || '',
                             role: u.role || 'marketer',
                             status: 'Active',
                         }))
                     );
+                } else {
+                    setCollaborators(defaultCollaborators);
                 }
             } catch (err) {
                 console.error('Failed to load admin telemetry:', err);
                 setError('Could not connect to backend telemetry endpoints.');
+                setCollaborators(defaultCollaborators);
             }
         };
 
         loadAdminData();
-    }, []);
+    }, [user]);
 
     const handleAddCollaborator = (e) => {
         e.preventDefault();
@@ -237,23 +247,45 @@ export default function AdminPage() {
                                 </p>
                             </div>
 
-                            <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
-                                <div className="flex items-center justify-between text-[11px]">
-                                    <span className="font-semibold text-white flex items-center gap-1.5">
-                                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                                        Hugging Face Image Failover
-                                    </span>
-                                    <span className="text-[10px] font-mono text-slate-400">
-                                        {health?.huggingface_model ? health.huggingface_model.split('/')[1] || health.huggingface_model : 'FLUX.1-schnell'}
-                                    </span>
+                            <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                        <span className="font-semibold text-white flex items-center gap-1.5">
+                                            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                            Cloudflare Workers AI FLUX.1 (Primary)
+                                        </span>
+                                        <span className="text-[10px] font-mono text-slate-400">
+                                            {health?.cloudflare_model ? health.cloudflare_model.replace('@cf/', '') : 'black-forest-labs/flux-1-schnell'}
+                                        </span>
+                                    </div>
+                                    <div className="p-2.5 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between text-[11px] font-mono">
+                                        <span className="text-slate-400">
+                                            {health?.cloudflare_configured ? '•••••••••••••••••••••••• (Cloudflare Edge Verified)' : 'CLOUDFLARE_API_TOKEN in .env'}
+                                        </span>
+                                        <span className={health?.cloudflare_configured ? 'text-emerald-400 font-semibold text-[10px]' : 'text-amber-400 font-semibold text-[10px]'}>
+                                            {health?.cloudflare_configured ? 'ACTIVE (PRIMARY)' : 'STANDBY'}
+                                        </span>
+                                    </div>
                                 </div>
-                                <div className="p-2.5 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between text-[11px] font-mono">
-                                    <span className="text-slate-400">
-                                        {health?.huggingface_configured ? '•••••••••••••••••••••••• (HF_TOKEN configured)' : 'Optional Token (Free Tier Available)'}
-                                    </span>
-                                    <span className={health?.huggingface_configured ? 'text-emerald-400 font-semibold text-[10px]' : 'text-amber-400 font-semibold text-[10px]'}>
-                                        {health?.huggingface_configured ? 'ACTIVE' : 'STANDBY (OPEN)'}
-                                    </span>
+
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                        <span className="font-semibold text-white flex items-center gap-1.5">
+                                            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+                                            Eden AI Universal (Fallback 1)
+                                        </span>
+                                        <span className="text-[10px] font-mono text-slate-400">
+                                            stabilityai / replicate
+                                        </span>
+                                    </div>
+                                    <div className="p-2.5 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between text-[11px] font-mono">
+                                        <span className="text-slate-400">
+                                            {health?.eden_ai_configured ? '•••••••••••••••••••••••• (EDEN_AI_API_KEY configured)' : 'Optional API Key in .env'}
+                                        </span>
+                                        <span className={health?.eden_ai_configured ? 'text-cyan-400 font-semibold text-[10px]' : 'text-slate-500 font-semibold text-[10px]'}>
+                                            {health?.eden_ai_configured ? 'ACTIVE (FALLBACK)' : 'STANDBY'}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>

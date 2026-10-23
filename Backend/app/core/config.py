@@ -41,17 +41,36 @@ class Settings(BaseSettings):
     @property
     def effective_image_model(self) -> str:
         """Returns the model for image generation."""
-        return self.HUGGINGFACE_IMAGE_MODEL or "black-forest-labs/FLUX.1-schnell"
+        return self.CLOUDFLARE_IMAGE_MODEL or "@cf/black-forest-labs/flux-1-schnell"
 
-    # ── Hugging Face AI (Image Generation) ───────────────────────────
-    HUGGINGFACE_API_KEY: str = ""
-    HUGGINGFACE_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-schnell"
+    # ── Cloudflare Workers AI (Primary Image Generation) ────────────
+    CLOUDFLARE_ACCOUNT_ID: str = ""
+    CLOUDFLARE_API_TOKEN: str = ""
+    CLOUDFLARE_IMAGE_MODEL: str = "@cf/black-forest-labs/flux-1-schnell"
+    CLOUDFLARE_VISION_MODEL: str = "@cf/meta/llama-3.2-11b-vision-instruct"
 
     @property
-    def effective_hf_token(self) -> str:
-        """Returns Hugging Face API token from HUGGINGFACE_API_KEY or HF_TOKEN env var."""
+    def effective_cloudflare_token(self) -> str:
+        """Returns Cloudflare API token from CLOUDFLARE_API_TOKEN env var."""
         import os
-        return self.HUGGINGFACE_API_KEY or os.getenv("HF_TOKEN") or ""
+        token = self.CLOUDFLARE_API_TOKEN or os.getenv("CLOUDFLARE_API_TOKEN") or ""
+        return token.strip("\"'")
+
+    @property
+    def effective_cloudflare_account_id(self) -> str:
+        """Returns Cloudflare Account ID from CLOUDFLARE_ACCOUNT_ID env var."""
+        import os
+        acc_id = self.CLOUDFLARE_ACCOUNT_ID or os.getenv("CLOUDFLARE_ACCOUNT_ID") or ""
+        return acc_id.strip("\"'")
+
+    # ── Eden AI (Fallback 1 Image Generation) ───────────────────────
+    EDEN_AI_API_KEY: str = ""
+
+    @property
+    def effective_eden_ai_token(self) -> str:
+        """Returns Eden AI API token from EDEN_AI_API_KEY env var."""
+        import os
+        return self.EDEN_AI_API_KEY or os.getenv("EDEN_AI_API_KEY") or ""
 
     # ── Grok AI (xAI API Fallback) ───────────────────────────────────
     GROK_API_KEY: str = ""
@@ -116,7 +135,7 @@ class Settings(BaseSettings):
 
     # ── File Ingestion Constraints ───────────────────────────────────
     MAX_UPLOAD_SIZE_MB: int = 50
-    ALLOWED_EXTENSIONS: List[str] = [".pdf", ".docx", ".txt", ".md"]
+    ALLOWED_EXTENSIONS: List[str] = [".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp"]
 
     model_config = {
         "env_file": (

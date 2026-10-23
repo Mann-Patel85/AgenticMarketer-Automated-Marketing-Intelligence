@@ -1,13 +1,13 @@
 # 🚀 AgenticMarketer: Automated Marketing Intelligence Swarm
 
-[![React](https://img.shields.io/badge/Frontend-React%2019%20%7C%20Vite-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Next.js](https://img.shields.io/badge/Frontend-Next.js%2016%20%7C%20React%2019-black?logo=next.js&logoColor=white)](https://nextjs.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Styling-Tailwind%20CSS%20v4-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![FastAPI](https://img.shields.io/badge/Backend-Python%20FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![CrewAI](https://img.shields.io/badge/Orchestration-CrewAI-FF6F61?logo=ai&logoColor=white)](https://www.crewai.com/)
-[![Gemini](https://img.shields.io/badge/AI%20Models-Google%20Gemini%20API-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
-[![ChromaDB](https://img.shields.io/badge/Vector%20Store-ChromaDB-FF4F00?logo=databricks&logoColor=white)](https://www.trychroma.com/)
+[![Groq LPU](https://img.shields.io/badge/LLM%20Engine-Groq%20Cloud%20LPUs-F55036?logo=fastapi&logoColor=white)](https://groq.com/)
+[![Cloudflare AI](https://img.shields.io/badge/Image%20Diffusion-Cloudflare%20FLUX.1-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers-ai/)
+[![Vector Store](https://img.shields.io/badge/Vector%20Store-TF--IDF%20%26%20Cosine%20RAG-FF4F00?logo=databricks&logoColor=white)](https://github.com/Mann-Patel85/AgenticMarketer-Automated-Marketing-Intelligence)
 
-**AgenticMarketer** is an enterprise-grade autonomous AI SaaS platform engineered to operate as a 24/7 digital marketing agency. Rather than relying on simple, single-prompt instructions or brittle manual workflows, AgenticMarketer coordinates a synchronized swarm of specialized AI agents—spanning document ingestion, live market research, multimodal creative copywriting, technical SEO auditing, and automated social publishing.
+**AgenticMarketer** is an enterprise-grade autonomous AI marketing intelligence SaaS platform engineered to operate as a 24/7 digital marketing agency. Rather than relying on simple, single-prompt instructions or brittle manual workflows, AgenticMarketer coordinates a synchronized **6-agent swarm**—spanning document RAG grounding, live market research, high-throughput Groq LPU copywriting, Cloudflare FLUX.1 edge visual diffusion, technical SEO auditing, and omnichannel social publishing.
 
 ---
 
@@ -15,160 +15,171 @@
 
 - [Core System Overview](#-core-system-overview)
 - [System Architecture](#-system-architecture)
-- [Multi-Agent Swarm Pipeline (CrewAI)](#-multi-agent-swarm-pipeline-crewai)
+- [6-Agent Swarm Topology Pipeline](#-6-agent-swarm-topology-pipeline)
 - [Tech Stack & Infrastructure](#-tech-stack--infrastructure)
 - [Frontend Architecture & Workspaces](#-frontend-architecture--workspaces)
 - [Role-Based Access Control (RBAC)](#-role-based-access-control-rbac)
-- [Target Backend REST API Specification](#-target-backend-rest-api-specification)
+- [Backend REST API Specification](#-backend-rest-api-specification)
 - [Project Directory Structure](#-project-directory-structure)
 - [Getting Started & Installation](#-getting-started--installation)
 - [Environment Configuration](#-environment-configuration)
-- [Roadmap](#-roadmap)
+- [System Capabilities & Roadmap](#-system-capabilities--roadmap)
+- [License](#-license)
 
 ---
 
 ## 🌟 Core System Overview
 
-Traditional marketing workflows are fragmented between research tools, copywriting assistants, designer handoffs, SEO audits, and social schedulers. **AgenticMarketer** consolidates this entire lifecycle into a unified, autonomous, grounded pipeline:
+Traditional marketing workflows are fragmented across separate research tools, copywriting assistants, designer handoffs, SEO auditors, and social schedulers. **AgenticMarketer** consolidates this entire lifecycle into a unified, autonomous, grounded pipeline:
 
-1. **Private Grounding via RAG**: Ingests internal brand voice guidelines, product battlecards, and customer case studies into a high-performance vector store (ChromaDB).
-2. **Live Competitive Intelligence**: Automatically conducts live SERP research and sentiment extraction via DuckDuckGo Search API.
-3. **Consensus-Driven Synthesis**: Copywriting and SEO agents negotiate readability vs. keyword density before finalizing assets.
-4. **Multimodal Asset Creation**: Prompts and aligns visual assets alongside targeted copy variations.
-5. **Direct Publishing Engine**: Connects via OAuth2 to automatically publish or schedule verified campaigns directly to LinkedIn and Meta/Facebook.
+1. **Private Grounding via RAG**: Ingests internal brand playbooks, product battlecards, and guidelines (`.pdf`, `.docx`, `.txt`) into a high-performance vector retrieval store with stop-word penalty optimization and file-scoped semantic search.
+2. **Live Competitive Intelligence**: Automatically conducts live SERP research and competitor gap extraction via the DuckDuckGo Search API.
+3. **High-Throughput Copywriting**: Groq LPUs (`openai/gpt-oss-120b`) synthesize multi-channel bundles (High-converting Hooks, LinkedIn posts, Reddit discussions, Blog articles, Cold Emails, and Meta Ad variants).
+4. **Multimodal Visual Synthesis**: Cloudflare Workers AI renders photorealistic 1024×1024 marketing banners via `@cf/black-forest-labs/flux-1-schnell` with automated image clarity validation scores and full PNG export.
+5. **SEO & Readability Auditing**: Evaluates Flesch-Kincaid readability index (Grade 8 target), keyword density, and search intent alignment.
+6. **Omnichannel Publishing Engine**: Schedules and broadcasts verified campaigns across LinkedIn, X (Twitter), Meta (Facebook & Instagram), Threads, Reddit, YouTube, TikTok, Pinterest, and Universal Webhooks.
 
 ---
 
 ## 🏗️ System Architecture
 
-AgenticMarketer is built as a **decoupled full-stack SaaS microservice**:
+AgenticMarketer is built as a **decoupled full-stack SaaS architecture**:
 
 ```
                                   USER BROWSER / CLIENT
                                             │
                                             ▼
                     ┌──────────────────────────────────────────────┐
-                    │      React 19 SPA (Vite + Tailwind v4)       │
+                    │     Next.js 16 (App Router) + React 19       │
                     │   • Swarm Launcher Workspace (/dashboard)   │
-                    │   • Grounding Vector Knowledge Base (/rag)   │
-                    │   • System Stats & Collaborators (/admin)    │
+                    │   • Vector Knowledge Base & Search (/knowledge) │
+                    │   • System Telemetry & Admin (/admin)        │
                     └───────────────────────┬──────────────────────┘
-                                            │ Axios (Bearer JWT / SSE)
+                                            │ Axios (Bearer JWT / SSE Stream)
                                             ▼
                     ┌──────────────────────────────────────────────┐
                     │          FastAPI Microservice Backend        │
                     │   • /api/auth   • /api/rag   • /api/swarm    │
+                    │   • /api/publish                             │
                     └───────┬───────────────┬──────────────┬───────┘
                             │               │              │
          ┌──────────────────▼──┐     ┌──────▼──────┐   ┌───▼──────────────────┐
-         │ ChromaDB Vector DB  │     │ Gemini API  │   │  OAuth2 Social APIs  │
-         │ (Dense Embeddings)  │     │ (LLM+Vision)│   │  (LinkedIn, Meta)    │
+         │ TF-IDF Vector Store │     │   Groq LPU  │   │ Cloudflare Workers AI│
+         │ (Cosine Similarity) │     │ (gpt-oss)   │   │ (FLUX.1 Diffusion)   │
          └─────────────────────┘     └─────────────┘   └──────────────────────┘
                                             │
                                ┌────────────▼────────────┐
-                               │  CrewAI Swarm Pipeline  │
+                               │ 6-Agent Swarm Pipeline  │
                                └─────────────────────────┘
 ```
 
 ---
 
-## 🤖 Multi-Agent Swarm Pipeline (CrewAI)
+## 🤖 6-Agent Swarm Topology Pipeline
 
-When a campaign is launched from the Swarm Launcher Workspace, CrewAI executes an autonomous 5-agent sequential pipeline:
+When a campaign is launched from the Swarm Workspace, the system executes an autonomous 6-agent sequential pipeline:
 
 ```
 ┌────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
-│ 1. Ingestion Agent     │ ───▶  │ 2. Research Agent      │ ───▶  │ 3. Copywriter & Visual │
-│ • pdfplumber / docx    │       │ • DuckDuckGo SERP      │       │ • Brand-Grounded Copy  │
-│ • ChromaDB Embeddings  │       │ • Competitor Teardowns │       │ • Gemini Visual Prompts│
+│ 1. Ingestion Agent     │ ───▶  │ 2. Research Agent      │ ───▶  │ 3. Copywriter Agent    │
+│ • pdfplumber / docx    │       │ • DuckDuckGo SERP      │       │ • Groq LPU Copy Engine │
+│ • Vector Store Chunks  │       │ • Competitor Teardowns │       │ • Multi-Channel Copy   │
 └────────────────────────┘       └────────────────────────┘       └───────────┬────────────┘
                                                                               │
-                                 ┌────────────────────────┐                   │
-                                 │ 5. Social Publisher    │ ◀─────────────────┘
-                                 │ • OAuth2 Automation    │                   │
-                                 │ • LinkedIn / Meta Post │                   ▼
-                                 └────────────────────────┘       ┌────────────────────────┐
-                                                                  │ 4. SEO & Analytics     │
-                                                                  │ • Flesch-Kincaid Score │
-                                                                  │ • LSI Keyword Density  │
+┌────────────────────────┐       ┌────────────────────────┐                   │
+│ 6. Social Publisher    │ ◀───  │ 5. SEO & Analytics     │ ◀─────────────────┤
+│ • Omnichannel Sched    │       │ • Flesch-Kincaid Grade │                   │
+│ • Multi-Network Post   │       │ • Keyword Density      │                   ▼
+└────────────────────────┘       └────────────────────────┘       ┌────────────────────────┐
+                                                                  │ 4. Image Gen Agent     │
+                                                                  │ • Cloudflare FLUX.1    │
+                                                                  │ • 1024x1024 PNG Banner │
                                                                   └────────────────────────┘
 ```
 
 ### Agent Roles & Specifications:
 
 1. **Document Ingestion Agent**
-   - **Engine**: `pdfplumber`, `python-docx`, `pytesseract` OCR, and `ChromaDB`.
-   - **Function**: Extracts semantic tokens from uploaded brand assets, pitch decks, and guidelines; chunks documents into dense vector embeddings for RAG grounding.
+   - **Engine**: `pypdf`, `pdfplumber`, `python-docx`, TF-IDF Cosine Vector Store.
+   - **Function**: Tokenizes brand guidelines, pitch decks, and battlecards; indexes semantic chunks with stop-word penalty scoring for hallucination-free RAG grounding.
 2. **Market Research Agent**
-   - **Engine**: DuckDuckGo Search API, SERP scrapers, and sentiment models.
-   - **Function**: Scrapes real-time competitive moves, market trends, and high-intent buyer pain points to eliminate generic content.
-3. **Copywriter & Visual Agent**
-   - **Engine**: Google Gemini 1.5 / 2.0 Flash / Pro multimodal APIs.
-   - **Function**: Synthesizes high-converting copy across channels (LinkedIn thought leadership, cold email sequences, ad variants) and crafts contextual visual asset prompts.
-4. **SEO & Analytics Agent**
-   - **Engine**: Flesch-Kincaid readability scoring engine & keyword density auditor.
-   - **Function**: Validates readability level (target Grade 8 for conversion), checks search intent alignment, and ensures semantic LSI keywords are naturally distributed.
-5. **Social Publisher Agent (Omnichannel)**
-   - **Engine**: Universal OAuth2 & REST connectors for LinkedIn, X (Twitter), Meta (Facebook & Instagram), Meta Threads, YouTube Community, TikTok, Pinterest, Reddit, and Universal Webhooks (Zapier, Make, Buffer, Hootsuite, Discord, Telegram, Slack, Custom CMS).
-   - **Function**: Manages authenticated social sessions to automatically format platform-specific character limits, adapt hashtags, and schedule or immediately broadcast approved copy and visual assets across any social network simultaneously.
+   - **Engine**: DuckDuckGo Search API & live SERP scrapers.
+   - **Function**: Scrapes real-time competitive positioning, market trends, and high-intent buyer friction points to ground campaign messaging.
+3. **Copywriter Agent**
+   - **Engine**: Groq Cloud LPUs (`openai/gpt-oss-120b` & `openai/gpt-oss-20b`).
+   - **Function**: Synthesizes high-converting copy across channels: Viral Hooks, LinkedIn articles, Reddit threads, Blog editorials, Cold Email sequences, and Meta Ad copy.
+4. **Image Generation Agent**
+   - **Engine**: Cloudflare Workers AI (`@cf/black-forest-labs/flux-1-schnell`) with Eden AI / HuggingFace fallback.
+   - **Function**: Expands campaign directives into photorealistic prompts, executes edge diffusion, computes OpenCV clarity validation scores, and delivers 1024×1024 PNG creative banners.
+5. **SEO & Analytics Agent**
+   - **Engine**: Flesch-Kincaid scoring engine & semantic keyword density auditor.
+   - **Function**: Validates readability level (target Grade 8 for conversions), checks search intent alignment, and ensures organic LSI keyword distribution.
+6. **Social Publisher Agent (Omnichannel)**
+   - **Engine**: Universal connectors for LinkedIn, X (Twitter), Meta (Facebook & Instagram), Threads, YouTube Community, TikTok, Pinterest, Reddit, and Universal Webhooks (Zapier, Make, Slack, Discord).
+   - **Function**: Formats platform-specific character limits, adapts hashtag taxonomy, and schedules or broadcasts approved copy and visual assets across multiple channels simultaneously.
 
 ---
 
 ## 💻 Tech Stack & Infrastructure
 
 ### Frontend
-- **Framework**: React 19 (`react`, `react-dom`)
-- **Build Tool**: Vite 8 (Ultra-fast HMR & ESM compilation)
-- **Styling**: Tailwind CSS v4 (`@tailwindcss/vite`) with curated dark slate theme
-- **Animations**: Framer Motion
+- **Framework**: Next.js 16 (App Router with Turbopack)
+- **Library**: React 19 (`react: ^19.2.8`, `react-dom: ^19.2.8`)
+- **Styling**: Tailwind CSS v4 (`@tailwindcss/postcss`) with custom cyber-card dark theme
+- **Animations**: Framer Motion (`framer-motion: ^13.2.0`)
 - **Icons**: Lucide React
-- **Routing**: React Router DOM v7
-- **HTTP Client**: Axios (configured with Bearer JWT interceptors)
+- **HTTP Client**: Axios with Bearer JWT interceptors & Server-Sent Events (SSE)
 
 ### Backend
 - **Framework**: Python 3.11+ / FastAPI (Asynchronous REST API)
-- **Orchestration**: CrewAI (Collaborative multi-agent framework)
-- **AI Models**: Google Gemini API (Multimodal text reasoning, vision, and generation)
-- **Vector Database**: ChromaDB (Embeddings persistence & cosine similarity retrieval)
-- **Document Extractors**: `pdfplumber`, `python-docx`, `pytesseract`
-- **Search & Metrics**: DuckDuckGo Search API, Textstat (Flesch-Kincaid scoring)
-- **Publishing Integrations**: OAuth2 (LinkedIn REST API, Facebook/Instagram Graph API)
+- **Server**: Uvicorn with ASGI live reload
+- **LLM Engine**: Groq Cloud LPUs (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`)
+- **Image Diffusion**: Cloudflare Workers AI (`@cf/black-forest-labs/flux-1-schnell`)
+- **Vector Retrieval**: Custom in-memory & JSON persistent TF-IDF vector engine with cosine similarity & stop-word penalty filtering
+- **Document Extractors**: `pypdf`, `python-docx`, `beautifulsoup4`
+- **Search & Metrics**: DuckDuckGo Search API, `textstat` (Flesch-Kincaid readability scoring)
+- **Security**: Passlib (Bcrypt), Python-Jose (JWT authentication)
 
 ---
 
 ## 🖥️ Frontend Architecture & Workspaces
 
-The frontend provides an intuitive, high-performance UI matching an enterprise dark-slate aesthetic:
-
-### 1. Swarm Launcher Workspace (`/dashboard` - `Dashboard.jsx`)
-- **Control Panel**:
-  - Directives input textarea with character counter and one-click starter presets (*"SaaS Launch"*, *"B2B Outbound"*, *"SEO Authority"*).
-  - Target audience and tone profile selector (*Authoritative*, *Conversational*, *Data-driven*, etc.).
-  - Drag-and-drop Grounding File Uploader supporting `.pdf`, `.docx`, `.txt`, and `.md`.
-  - Queued file list with status badges and semantic chunk metrics.
-  - Interactive **Launch Multi-Agent Swarm** trigger with live executing state and progress percentage.
+### 1. Swarm Launcher Workspace (`/dashboard`)
+- **Campaign Control Panel**:
+  - Directives input textarea with starter presets (*"SaaS Launch"*, *"B2B Outbound"*, *"SEO Authority"*).
+  - Target audience, tone selector, and Multimodal Brief / Brand Playbook selector.
+  - Interactive **Launch Swarm** trigger with active execution state and telemetry.
 - **Topological Agent Grid**:
-  - Live visual cards for each agent in the swarm with dynamic `'Idle'` vs `'Active'` (pulsing) badges.
-- **Swarm Feed & Output Workspace**:
-  - **Campaign Output**: Live streaming generated copy, hooks, outbound sequences, and meta descriptions.
-  - **Terminal Logs**: Real-time WebSocket/SSE logs showing step-by-step agent interactions with timestamps.
-  - **SEO & Audit Dashboard**: Readability score (88/100), search intent match (96%), and target keyword density table.
-  - **Action Toolbar**: Instant one-click clipboard copy with feedback and `.md` report download.
+  - Live interactive cards for each of the 6 agents showing `'Idle'`, pulsing `'Thinking...'`, or `'✓ Complete'`.
+- **Dual Copy Workspace**:
+  - **Clean Studio Mode**: Formatted channel tabs (Hooks, LinkedIn, Reddit, Blog, Email, Meta Ads) with one-click clipboard copy and toast notifications.
+  - **Raw Markdown Mode**: Complete unparsed markdown output with download actions.
+- **Multimodal Visual Studio**:
+  - Photorealistic 1024×1024 creative preview with gradient glassmorphism overlay.
+  - Model telemetry badge (`FLUX.1 Schnell (Edge)`), Clarity Validation score, and **Download Full PNG** action.
+- **Omnichannel Publisher Drawer**:
+  - Platform selector (LinkedIn, X, Meta, YouTube, TikTok, Pinterest, Reddit, Webhooks) with live character counter limits and instant broadcasting.
+- **Live Terminal Logs**:
+  - Real-time Server-Sent Events (SSE) stream capturing agent reasoning steps and timestamps.
 
-### 2. Vector Knowledge Base (`/knowledge` - `KnowledgeBase.jsx`)
-- Interactive grounding file repository.
-- Upload brand assets, search indexed vector collections, and delete outdated context chunks.
+### 2. Vector Knowledge Base (`/knowledge`)
+- **Grounding Document Uploader**: Drag-and-drop `.pdf`, `.docx`, and `.txt` files with automated chunking and tokenization.
+- **Indexed Assets Catalog**: File inventory showing chunk counts, size, and one-click deletion.
+- **Live Semantic Vector Search Tester**:
+  - Single-file scoping filter to query specific uploaded brand guides.
+  - Stop-word penalty filtering preventing false-positive query pollution.
+  - Cosine similarity ranking with highlighted matched semantic terms.
 
-### 3. Admin Console (`/admin` - `AdminPanel.jsx`)
-- Real-time token usage telemetry (Gemini tokens, ChromaDB chunk count).
-- Team collaborator seats and role assignments.
-- Infrastructure and agent API health statuses.
+### 3. Admin & Telemetry Console (`/admin`)
+- Real-time token usage telemetry and chunk distribution.
+- Swarm infrastructure health and agent API status matrix.
+- Team collaborator seats and role assignment management.
 
 ---
 
 ## 🔐 Role-Based Access Control (RBAC)
 
-AgenticMarketer implements granular role-based routing through `AuthContext.jsx` and `ProtectedRoute.jsx`:
+AgenticMarketer implements granular role-based routing through `AuthContext.jsx`:
 
 | Role Identifier | Role Title | Dashboard | Knowledge Base | Admin Console | Swarm Launch |
 | :--- | :--- | :---: | :---: | :---: | :---: |
@@ -180,28 +191,29 @@ AgenticMarketer implements granular role-based routing through `AuthContext.jsx`
 
 ---
 
-## 📡 Target Backend REST API Specification
+## 📡 Backend REST API Specification
 
-The FastAPI microservice exposes the following core endpoints:
+The FastAPI backend exposes the following REST endpoints:
 
 ### Authentication (`/api/auth`)
-- `POST /api/auth/register`: Create user profile with workspace role.
+- `POST /api/auth/register`: Create user account with workspace role.
 - `POST /api/auth/login`: Authenticate credentials, return JWT access token.
 - `GET /api/auth/me`: Retrieve current user profile and permission scopes.
 
 ### Vector Knowledge Base & RAG (`/api/rag`)
 - `POST /api/rag/upload`: Upload `.pdf`, `.docx`, `.txt` grounding documents (`multipart/form-data`).
-- `GET /api/rag/documents`: List indexed assets, embedding sizes, and chunk statistics.
-- `DELETE /api/rag/documents/{id}`: Purge document and vector embeddings from ChromaDB.
+- `GET /api/rag/documents`: List indexed brand assets, file sizes, and chunk statistics.
+- `DELETE /api/rag/documents/{id}`: Delete document and associated vector chunks.
+- `POST /api/rag/search`: Query semantic vector store with optional file scoping and stop-word filtering.
 
 ### Swarm Orchestration (`/api/swarm`)
-- `POST /api/swarm/launch`: Trigger CrewAI execution with campaign directives and grounding context.
-- `GET /api/swarm/stream/{execution_id}`: Server-Sent Events (SSE) / WebSocket stream for live agent logs and output typing.
-- `POST /api/swarm/abort`: Terminate currently running swarm pipeline.
+- `POST /api/swarm/launch`: Execute 6-agent swarm pipeline with campaign directive and selected brand context.
+- `GET /api/swarm/stream/{execution_id}`: Server-Sent Events (SSE) stream for live agent logs and output typing.
+- `POST /api/swarm/abort`: Cancel running pipeline execution.
 
 ### Social Publishing (`/api/publish`)
-- `GET /api/publish/oauth/{platform}`: Initiate OAuth2 flow (LinkedIn / Meta).
-- `POST /api/publish/post`: Publish or schedule approved copy and media assets to social channels.
+- `POST /api/publish/post`: Publish or schedule approved copy and visual assets across selected social channels.
+- `GET /api/publish/history`: Retrieve past omnichannel broadcast logs.
 
 ---
 
@@ -209,34 +221,52 @@ The FastAPI microservice exposes the following core endpoints:
 
 ```
 AgenticMarketer-Automated-Marketing-Intelligence/
-├── .venv/                         # Python virtual environment
-├── frontend/                      # React SPA
-│   ├── public/                    # Static assets & favicons
-│   ├── src/
-│   │   ├── assets/                # Visual media & icons
-│   │   ├── components/
-│   │   │   ├── Navbar.jsx         # Sticky navigation with active tab indicator
-│   │   │   ├── ProtectedRoute.jsx # RBAC authentication route guard
-│   │   │   └── Sidebar.jsx        # Modular navigation drawer
-│   │   ├── context/
-│   │   │   └── AuthContext.jsx    # Session state & demo auth provider
-│   │   ├── pages/
-│   │   │   ├── Dashboard.jsx      # Swarm Launcher & multi-agent workspace
-│   │   │   ├── KnowledgeBase.jsx  # ChromaDB grounding document manager
-│   │   │   ├── AdminPanel.jsx     # Usage metrics & workspace permissions
-│   │   │   ├── Login.jsx          # Secure sign-in with social auth
-│   │   │   └── Register.jsx       # Workspace registration with role picker
-│   │   ├── utils/
-│   │   │   └── api.js             # Axios client with JWT request interceptor
-│   │   ├── App.jsx                # Application router and layout tree
-│   │   ├── main.jsx               # React DOM entry point
-│   │   └── index.css              # Tailwind CSS v4 root directives
-│   ├── index.html                 # App shell with typography and metadata
-│   ├── package.json               # Frontend dependencies & scripts
-│   └── vite.config.js             # Vite configuration with Tailwind plugin
-├── backend/                       # Python FastAPI Microservice (Roadmap)
-├── README.md                      # Complete system documentation
-└── .gitignore                     # Git ignore rules
+├── .venv/                              # Python virtual environment
+├── Backend/                            # FastAPI Microservice Backend
+│   ├── app/
+│   │   ├── agents/
+│   │   │   └── swarm_pipeline.py       # 6-Agent Swarm Orchestration & Execution
+│   │   ├── core/
+│   │   │   ├── config.py               # Pydantic Settings & Environment Loading
+│   │   │   └── security.py             # JWT & Password Hash Utilities
+│   │   ├── rag/
+│   │   │   └── vector_store.py         # TF-IDF Cosine Vector Retrieval Engine
+│   │   ├── routers/
+│   │   │   ├── auth.py                 # Authentication & Role Routes
+│   │   │   ├── rag.py                  # Knowledge Base & Vector Search Endpoints
+│   │   │   ├── swarm.py                # Swarm Launch & SSE Stream Endpoints
+│   │   │   └── publish.py              # Social Publishing & History Endpoints
+│   │   └── main.py                     # FastAPI Application Entrypoint & CORS Setup
+│   ├── data/
+│   │   ├── uploads/                    # Grounding Files & Generated Campaign Images
+│   │   ├── rag_chunks.json             # Indexed Vector Chunks
+│   │   ├── rag_metadata.json           # File Metadata Registry
+│   │   └── workspaces.json             # Workspace State History
+│   └── requirements.txt                # Python Backend Dependencies
+├── frontend/                           # Next.js 16 Web Application
+│   ├── app/
+│   │   ├── admin/
+│   │   │   └── page.jsx                # Telemetry & Admin Console View
+│   │   ├── dashboard/
+│   │   │   └── page.jsx                # Swarm Launcher, Visual Studio & Publisher
+│   │   ├── knowledge/
+│   │   │   └── page.jsx                # Vector Knowledge Base & Search Tester
+│   │   ├── login/
+│   │   │   └── page.jsx                # Login View with Role Selection
+│   │   ├── register/
+│   │   │   └── page.jsx                # Registration View
+│   │   ├── layout.jsx                  # Root Layout, Theme & AuthProvider
+│   │   ├── page.jsx                    # Landing / Workspace Redirect
+│   │   └── globals.css                 # Tailwind CSS v4 Directives & Design Tokens
+│   ├── context/
+│   │   └── AuthContext.jsx             # User Session & JWT State Provider
+│   ├── utils/
+│   │   └── api.js                      # Axios Client with Bearer Interceptor
+│   ├── package.json                    # Frontend Dependencies & Scripts
+│   └── next.config.mjs                 # Next.js Configuration
+├── .env.example                        # Template for Environment Configuration
+├── LICENSE                             # MIT License
+└── README.md                           # System Documentation
 ```
 
 ---
@@ -246,9 +276,29 @@ AgenticMarketer-Automated-Marketing-Intelligence/
 ### Prerequisites
 - **Node.js**: v18.0+ or v20.0+
 - **Python**: 3.11+
-- **Package Manager**: `npm` or `pnpm`
+- **Package Manager**: `npm`
 
-### 1. Frontend Setup
+### 1. Clone the Repository
+```bash
+git clone https://github.com/Mann-Patel85/AgenticMarketer-Automated-Marketing-Intelligence.git
+cd AgenticMarketer-Automated-Marketing-Intelligence
+```
+
+### 2. Backend Setup (FastAPI)
+```bash
+# Create and activate virtual environment
+python -m venv .venv
+
+# Windows:
+.\.venv\Scripts\activate
+# Linux/macOS:
+source .venv/bin/activate
+
+# Install backend dependencies
+pip install -r backend/requirements.txt
+```
+
+### 3. Frontend Setup (Next.js)
 ```bash
 # Navigate to the frontend directory
 cd frontend
@@ -256,65 +306,69 @@ cd frontend
 # Install dependencies
 npm install
 
-# Start the local development server
-npm run dev
-
-# Build production bundle
-npm run build
+# Return to root
+cd ..
 ```
-The frontend will start at `http://localhost:5173` (or the next available port).
 
-### 2. Backend Setup (FastAPI Microservice)
+### 4. Running the Application Locally
+
+Start both servers in separate terminal sessions:
+
+**Terminal 1 — Backend (FastAPI on Port 8000):**
 ```bash
-# Activate existing virtual environment
-# Windows:
-.venv\Scripts\activate
-# Linux/macOS:
-source .venv/bin/activate
-
-# Install requirements (once backend requirements.txt is provided)
-pip install fastapi uvicorn crewai chromadb google-generativeai pdfplumber python-docx duckduckgo-search textstat
+python -m uvicorn backend.app.main:app --reload --port 8000
 ```
+
+**Terminal 2 — Frontend (Next.js on Port 3000):**
+```bash
+cd frontend
+npm run dev
+```
+
+Open `http://localhost:3000` in your web browser.
 
 ---
 
 ## 🔑 Environment Configuration
 
-Create a `.env` file in the root / backend directory:
+Create a `.env` file in the root project directory:
 
 ```env
-# Google Gemini API
-GEMINI_API_KEY=your_gemini_api_key_here
+# Groq Cloud LPU AI (Primary High-Speed Text Engine)
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=openai/gpt-oss-120b
+GROQ_FAST_MODEL=openai/gpt-oss-20b
 
-# ChromaDB Configuration
-CHROMA_PERSIST_DIRECTORY=./chroma_data
+# Cloudflare Workers AI (Primary Image Generation - FLUX.1 schnell)
+CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id_here
+CLOUDFLARE_API_TOKEN=your_cloudflare_api_token_here
+CLOUDFLARE_IMAGE_MODEL=@cf/black-forest-labs/flux-1-schnell
 
-# Authentication
-JWT_SECRET=your_super_secret_jwt_key
+# Authentication & Security
+JWT_SECRET=your_secure_random_256_bit_secret_token
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
-# OAuth Publishing (LinkedIn & Meta)
-LINKEDIN_CLIENT_ID=your_linkedin_client_id
-LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
-META_APP_ID=your_meta_app_id
-META_APP_SECRET=your_meta_app_secret
+# Eden AI (Optional Image Generation Fallback)
+EDEN_AI_API_KEY=
 ```
 
 ---
 
-## 🚀 Roadmap
+## 🚀 System Capabilities & Roadmap
 
-- [x] **Phase 1**: Modern, interactive React 19 frontend with Tailwind CSS v4.
-- [x] **Phase 2**: Complete Swarm Launcher Workspace with 4-agent topology, preset goals, and simulated streaming output.
-- [x] **Phase 3**: Vector Knowledge Base interface with local file queue and RAG asset manager.
-- [ ] **Phase 4**: FastAPI backend initialization with ChromaDB vector pipeline.
-- [ ] **Phase 5**: CrewAI multi-agent orchestration hooking into live DuckDuckGo Search and Google Gemini APIs.
-- [ ] **Phase 6**: Multimodal visual generation prompts and preview gallery.
-- [ ] **Phase 7**: OAuth2 direct publishing pipeline for LinkedIn and Meta/Facebook.
+- [x] **Next.js 16 + React 19 Frontend**: Enterprise cyber-card dashboard styled with Tailwind CSS v4 and Framer Motion.
+- [x] **6-Agent Swarm Pipeline**: Orchestrates Ingestion, Research, Copywriter, Image Generation, SEO, and Publisher agents.
+- [x] **Groq LPU Acceleration**: High-throughput copy synthesis delivering multi-channel bundles in seconds.
+- [x] **Cloudflare FLUX.1 Edge Diffusion**: Photorealistic 1024×1024 visuals with OpenCV clarity validation scores.
+- [x] **RAG Vector Knowledge Base**: TF-IDF cosine retrieval with stop-word penalty filtering and single-file scoped search.
+- [x] **Clean Studio & Markdown Views**: Formatted channel assets (Hooks, LinkedIn, Reddit, Blog, Email, Ads) with one-click copy.
+- [x] **Omnichannel Publishing Engine**: Live broadcasting integration across LinkedIn, X, Meta, YouTube, TikTok, Reddit, and Webhooks.
+- [ ] **Multi-Brand Workspace Partitioning**: Isolated vector collections and brand voice configurations per enterprise client.
+- [ ] **Direct Social OAuth2 Live Tokens**: Native one-click OAuth authorization flows for client social profiles.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the [MIT License](LICENSE).

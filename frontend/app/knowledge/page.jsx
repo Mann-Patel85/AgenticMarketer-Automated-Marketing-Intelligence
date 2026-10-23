@@ -8,6 +8,7 @@ import {
     UploadCloud,
     Trash2,
     FileText,
+    Image as ImageIcon,
     CheckCircle2,
     Search,
     Sparkles,
@@ -28,10 +29,22 @@ import {
     TrendingUp,
     Brain,
     ShieldAlert,
+    Filter,
 } from 'lucide-react';
 import { fetchDocuments, uploadDocument, deleteDocument, queryKnowledgeBase } from '../../utils/api';
 
 const getPerformanceNow = () => (typeof window !== 'undefined' && window.performance ? window.performance.now() : 0);
+
+const STOP_WORDS = new Set([
+    'what', 'is', 'are', 'and', 'or', 'the', 'a', 'an', 'of', 'to', 'in',
+    'for', 'on', 'with', 'as', 'at', 'by', 'from', 'company', 'about',
+    'our', 'your', 'their', 'this', 'that', 'how', 'who', 'whom', 'which',
+    'can', 'could', 'should', 'would', 'does', 'do', 'did', 'we', 'you',
+    'they', 'them', 'us', 'i', 'me', 'my', 'myself', 'it', 'its', 'be',
+    'been', 'being', 'have', 'has', 'had', 'having', 'so', 'than', 'too',
+    'very', 'just', 'now', 'tell', 'show', 'give', 'please', 'find',
+    'describe', 'corporate'
+]);
 
 export default function KnowledgePage() {
     const [documents, setDocuments] = useState([]);
@@ -46,6 +59,7 @@ export default function KnowledgePage() {
 
     // Advanced Vector Search Tester State
     const [testQuery, setTestQuery] = useState('');
+    const [selectedSearchDoc, setSelectedSearchDoc] = useState('ALL');
     const [queryResults, setQueryResults] = useState(null);
     const [isQuerying, setIsQuerying] = useState(false);
     const [topK, setTopK] = useState(4);
@@ -142,6 +156,9 @@ export default function KnowledgePage() {
             await deleteDocument(idToDelete);
             setNotification(`Deleted "${displayName}" from vector store.`);
             setError('');
+            if (selectedSearchDoc === displayName || selectedSearchDoc === idToDelete) {
+                setSelectedSearchDoc('ALL');
+            }
             await loadDocuments();
             setTimeout(() => setNotification(''), 3000);
         } catch (err) {
@@ -150,7 +167,7 @@ export default function KnowledgePage() {
         }
     };
 
-    const handleTestQuery = async (e, customQuery = null) => {
+    const handleTestQuery = async (e, customQuery = null, customDoc = null) => {
         if (e && e.preventDefault) e.preventDefault();
         const queryToRun = (customQuery !== null ? customQuery : testQuery).trim();
         if (!queryToRun) return;
@@ -159,13 +176,15 @@ export default function KnowledgePage() {
             setTestQuery(customQuery);
         }
 
+        const docToFilter = customDoc !== null ? customDoc : selectedSearchDoc;
+
         setIsQuerying(true);
         setError('');
         setExpandedChunks({});
         const startTime = getPerformanceNow();
 
         try {
-            const res = await queryKnowledgeBase(queryToRun, topK);
+            const res = await queryKnowledgeBase(queryToRun, topK, docToFilter);
             const results = Array.isArray(res) ? res : (res?.results || []);
             const answerText = Array.isArray(res) ? '' : (res?.answer || '');
             setQueryResults(results);
@@ -173,7 +192,16 @@ export default function KnowledgePage() {
             const latency = Math.round(getPerformanceNow() - startTime);
             setQueryLatencyMs(latency);
             setQueryHistory((prev) => {
-                const next = [{ query: queryToRun, latency, count: results.length, ts: Date.now() }, ...prev];
+                const next = [
+                    {
+                        query: queryToRun,
+                        latency,
+                        count: results.length,
+                        doc: docToFilter !== 'ALL' ? docToFilter : 'All Documents',
+                        ts: Date.now(),
+                    },
+                    ...prev,
+                ];
                 return next.slice(0, 8);
             });
         } catch (err) {
@@ -181,6 +209,13 @@ export default function KnowledgePage() {
             setError(err.response?.data?.detail || 'Vector search failed.');
         } finally {
             setIsQuerying(false);
+        }
+    };
+
+    const handleDocFilterChange = (newDoc) => {
+        setSelectedSearchDoc(newDoc);
+        if (testQuery.trim() && queryResults) {
+            handleTestQuery(null, testQuery, newDoc);
         }
     };
 
@@ -196,7 +231,9 @@ export default function KnowledgePage() {
 
     const renderHighlightedText = (text, query) => {
         if (!highlightKeywords || !query || !query.trim()) return text;
-        const words = query.toLowerCase().match(/\b\w{3,}\b/g);
+        const rawTokens = query.toLowerCase().match(/\b[\w-]{3,}\b/g) || [];
+        // Filter out conversational stop-words to eliminate purple highlight pollution
+        const words = rawTokens.filter((token) => !STOP_WORDS.has(token) && token.length > 2);
         if (!words || words.length === 0) return text;
 
         const uniqueWords = Array.from(new Set(words));
@@ -237,6 +274,15 @@ export default function KnowledgePage() {
 
     const totalChunksIndexed = documents.reduce((sum, d) => sum + (d.chunks || 0), 0);
 
+    // Conversational stop-word query analysis for clean vectorization feedback
+    const queryTokens = testQuery
+        .toLowerCase()
+        .split(/\s+/)
+        .map((w) => w.replace(/^[^\w]+|[^\w]+$/g, ''))
+        .filter(Boolean);
+    const stopWordsInQuery = queryTokens.filter((token) => STOP_WORDS.has(token));
+    const hasHeavyStopWords = queryTokens.length >= 3 && (stopWordsInQuery.length / queryTokens.length) >= 0.35;
+
     return (
         <ProtectedRoute>
             <div className="min-h-screen text-slate-100 pb-20 pt-6">
@@ -275,7 +321,7 @@ export default function KnowledgePage() {
                                 </h2>
                             </div>
                             <span className="text-[11px] font-mono text-cyan-300 bg-cyan-950/60 border border-cyan-800/60 px-3 py-1 rounded-full">
-                                PDF • DOCX • TXT • MD
+                                PDF • DOCX • TXT • MD • PNG • JPG • WEBP
                             </span>
                         </div>
 
@@ -294,7 +340,7 @@ export default function KnowledgePage() {
                                 ref={fileInputRef}
                                 type="file"
                                 multiple
-                                accept=".pdf,.docx,.txt,.md"
+                                accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp"
                                 onChange={handleFileSelect}
                                 className="hidden"
                             />
@@ -306,7 +352,7 @@ export default function KnowledgePage() {
                                     Click to browse files or drag & drop here
                                 </p>
                                 <p className="text-[11px] text-slate-400 max-w-md">
-                                    Stage your documents for chunking, embedding, and vector storage in the RAG index.
+                                    Stage your documents and visual assets for chunking, embedding, OCR vision, and vector storage.
                                 </p>
                             </div>
                         </div>
@@ -410,23 +456,36 @@ export default function KnowledgePage() {
                             </div>
                         ) : (
                             <div className="space-y-3">
-                                {filteredDocuments.map((doc) => (
-                                    <div
-                                        key={doc.id}
-                                        className="flex items-center justify-between p-4 bg-slate-950/70 border border-slate-800/80 rounded-2xl hover:border-indigo-500/30 transition"
-                                    >
-                                        <div className="flex items-center space-x-3.5 min-w-0 pr-2">
-                                            <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl shrink-0">
-                                                <FileText className="w-5 h-5 text-indigo-400" />
+                                {filteredDocuments.map((doc) => {
+                                    const isImageDoc = /\.(png|jpe?g|webp)$/i.test(doc.name);
+                                    return (
+                                        <div
+                                            key={doc.id}
+                                            className="flex items-center justify-between p-4 bg-slate-950/70 border border-slate-800/80 rounded-2xl hover:border-indigo-500/30 transition"
+                                        >
+                                            <div className="flex items-center space-x-3.5 min-w-0 pr-2">
+                                                <div className={`p-2.5 rounded-xl shrink-0 border ${
+                                                    isImageDoc
+                                                        ? 'bg-pink-500/10 border-pink-500/20 text-pink-400'
+                                                        : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                                                }`}>
+                                                    {isImageDoc ? <ImageIcon className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="text-xs font-semibold text-slate-200 truncate">{doc.name}</h3>
+                                                        {isImageDoc && (
+                                                            <span className="px-2 py-0.2 rounded-md bg-pink-500/15 border border-pink-500/30 text-[9px] font-mono font-bold text-pink-300">
+                                                                Visual Asset
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[10px] text-slate-400 mt-0.5">
+                                                        {doc.size} • <span className="text-indigo-400 font-mono">{doc.chunks} semantic chunks</span> • {doc.updated}
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div className="min-w-0">
-                                                <h3 className="text-xs font-semibold text-slate-200 truncate">{doc.name}</h3>
-                                                <p className="text-[10px] text-slate-400 mt-0.5">
-                                                    {doc.size} • <span className="text-indigo-400 font-mono">{doc.chunks} semantic chunks</span> • {doc.updated}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center space-x-3 shrink-0">
+                                            <div className="flex items-center space-x-3 shrink-0">
                                             <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-[10px] font-medium flex items-center gap-1.5">
                                                 <CheckCircle2 className="w-3.5 h-3.5" /> {doc.status}
                                             </span>
@@ -439,7 +498,8 @@ export default function KnowledgePage() {
                                             </button>
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -517,12 +577,21 @@ export default function KnowledgePage() {
                                             <button
                                                 key={i}
                                                 type="button"
-                                                onClick={(e) => handleTestQuery(e, h.query)}
+                                                onClick={(e) => {
+                                                    const targetDoc = h.doc && h.doc !== 'All Documents' ? h.doc : 'ALL';
+                                                    setSelectedSearchDoc(targetDoc);
+                                                    handleTestQuery(e, h.query, targetDoc);
+                                                }}
                                                 className="w-full text-left flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 transition group cursor-pointer"
                                             >
                                                 <div className="flex items-center gap-2 min-w-0">
                                                     <Search className="w-3 h-3 text-slate-500 shrink-0" />
                                                     <span className="text-xs text-slate-300 truncate group-hover:text-white transition">{h.query}</span>
+                                                    {h.doc && h.doc !== 'All Documents' && (
+                                                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 truncate max-w-[140px]">
+                                                            {h.doc}
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     <span className="text-[10px] font-mono text-indigo-400">{h.count} chunks</span>
@@ -613,6 +682,109 @@ export default function KnowledgePage() {
                                 </div>
                             </div>
 
+                            {/* TARGET DOCUMENT SELECTOR / FILTER */}
+                            <div className="p-4 bg-slate-950/90 border border-indigo-500/20 rounded-2xl space-y-3 shadow-lg shadow-indigo-950/20">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        <div className={`p-2 rounded-xl border transition ${
+                                            selectedSearchDoc !== 'ALL'
+                                                ? 'bg-indigo-600/25 border-indigo-500/50 text-indigo-300 shadow-md shadow-indigo-600/20'
+                                                : 'bg-slate-900 border-slate-800 text-slate-400'
+                                        }`}>
+                                            <Filter className="w-4 h-4" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="text-xs font-bold text-white tracking-wide">
+                                                    Target Search File:
+                                                </span>
+                                                {selectedSearchDoc !== 'ALL' ? (
+                                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1.5 shadow-sm">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                                                        Isolated: {selectedSearchDoc}
+                                                    </span>
+                                                ) : (
+                                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono text-slate-400 bg-slate-900 border border-slate-800">
+                                                        All Files ({documents.length} indexed)
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                                                {selectedSearchDoc !== 'ALL'
+                                                    ? `Vector search strictly scoped to "${selectedSearchDoc}". Results from other files are suppressed.`
+                                                    : 'Searching concurrently across all indexed PDFs, brand playbooks, and assets.'}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <select
+                                            value={selectedSearchDoc}
+                                            onChange={(e) => handleDocFilterChange(e.target.value)}
+                                            className="bg-slate-900 hover:bg-slate-800 border border-indigo-500/30 hover:border-indigo-500/60 text-xs text-indigo-200 font-medium rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer transition max-w-[280px] truncate shadow-inner"
+                                        >
+                                            <option value="ALL">🌐 All Indexed Files ({documents.length})</option>
+                                            {documents.map((doc) => {
+                                                const fname = doc.filename || doc.name;
+                                                return (
+                                                    <option key={doc.id || fname} value={fname}>
+                                                        📄 {fname} ({doc.chunks} chunks)
+                                                    </option>
+                                                );
+                                            })}
+                                        </select>
+                                        {selectedSearchDoc !== 'ALL' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDocFilterChange('ALL')}
+                                                className="px-2.5 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition cursor-pointer active:scale-95"
+                                                title="Reset to All Documents"
+                                            >
+                                                Reset
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Quick Clickable File Pills */}
+                                {documents.length > 1 && (
+                                    <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-slate-800/80">
+                                        <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider mr-1">Quick Scope:</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDocFilterChange('ALL')}
+                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer ${
+                                                selectedSearchDoc === 'ALL'
+                                                    ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/30 border border-indigo-400'
+                                                    : 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200'
+                                            }`}
+                                        >
+                                            All ({documents.length})
+                                        </button>
+                                        {documents.map((doc) => {
+                                            const fname = doc.filename || doc.name;
+                                            const isSelected = selectedSearchDoc === fname;
+                                            return (
+                                                <button
+                                                    key={doc.id || fname}
+                                                    type="button"
+                                                    onClick={() => handleDocFilterChange(fname)}
+                                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer truncate max-w-[240px] flex items-center gap-1.5 ${
+                                                        isSelected
+                                                            ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/30 border border-indigo-400'
+                                                            : 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200'
+                                                    }`}
+                                                    title={fname}
+                                                >
+                                                    <span>📄</span>
+                                                    <span className="truncate">{fname}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Query Input */}
                             <form onSubmit={handleTestQuery} className="flex flex-col sm:flex-row gap-3">
                                 <div className="relative flex-1">
@@ -621,7 +793,11 @@ export default function KnowledgePage() {
                                         type="text"
                                         value={testQuery}
                                         onChange={(e) => setTestQuery(e.target.value)}
-                                        placeholder="Enter marketing directive or query to test vector grounding..."
+                                        placeholder={
+                                            selectedSearchDoc !== 'ALL'
+                                                ? `Search strictly within "${selectedSearchDoc}"...`
+                                                : "Enter marketing directive or query to test vector grounding..."
+                                        }
                                         className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-10 pr-10 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition"
                                     />
                                     {testQuery && (
@@ -647,11 +823,32 @@ export default function KnowledgePage() {
                                     ) : (
                                         <>
                                             <Search className="w-4 h-4" />
-                                            <span>Run Vector Query</span>
+                                            <span>
+                                                {selectedSearchDoc !== 'ALL' ? 'Search Selected File' : 'Run Vector Query'}
+                                            </span>
                                         </>
                                     )}
                                 </button>
                             </form>
+
+                            {/* Conversational Stop-Word Tip Notice */}
+                            {hasHeavyStopWords && (
+                                <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 to-slate-900 border border-amber-500/30 text-xs text-amber-200 shadow-md">
+                                    <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                                    <div className="space-y-0.5 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-bold text-amber-300">Conversational Query Detected</span>
+                                            <span className="px-2 py-0.2 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                                Stop-Words Filtered
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                                            Your query contains conversational filler words (<strong className="text-amber-100">{stopWordsInQuery.slice(0, 3).join(', ')}</strong>). 
+                                            The backend TF-IDF vectorizer automatically strips these to prevent weight dilution. For peak precision, concise phrases like <em className="text-white">"mission statement"</em> or <em className="text-white">"corporate boilerplate"</em> maximize relevance scores.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Telemetry Stats Bar */}
                             {!isQuerying && queryResults && (
@@ -664,18 +861,28 @@ export default function KnowledgePage() {
                                             </div>
                                         )}
                                         <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[11px]">
+                                            <Filter className="w-3.5 h-3.5 text-indigo-400" />
+                                            <span>File Scope: <strong className={selectedSearchDoc !== 'ALL' ? 'text-indigo-300 font-semibold' : 'text-slate-200'}>
+                                                {selectedSearchDoc !== 'ALL' ? selectedSearchDoc : 'All Documents'}
+                                            </strong></span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[11px]">
                                             <Layers className="w-3.5 h-3.5 text-indigo-400" />
                                             <span>Matches: <strong className="text-slate-200">{filteredQueryResults?.length || 0} chunks</strong></span>
                                         </div>
                                         <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[11px]">
                                             <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                                            <span>Top Score: <strong className="text-emerald-400">{filteredQueryResults && filteredQueryResults[0] ? `${(filteredQueryResults[0].score * 100).toFixed(1)}%` : '0%'}</strong></span>
+                                            <span>Top Score: <strong className="text-emerald-400">{
+                                                filteredQueryResults && filteredQueryResults[0]
+                                                    ? `${(filteredQueryResults[0].score > 1 ? filteredQueryResults[0].score : filteredQueryResults[0].score * 100).toFixed(1)}%`
+                                                    : '0%'
+                                            }</strong></span>
                                         </div>
                                         <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[11px]">
                                             <BarChart3 className="w-3.5 h-3.5 text-violet-400" />
                                             <span>Avg Score: <strong className="text-violet-400">{
                                                 filteredQueryResults && filteredQueryResults.length > 0
-                                                    ? `${(filteredQueryResults.reduce((s, r) => s + r.score, 0) / filteredQueryResults.length * 100).toFixed(1)}%`
+                                                    ? `${(filteredQueryResults.reduce((s, r) => s + (r.score > 1 ? r.score : r.score * 100), 0) / filteredQueryResults.length).toFixed(1)}%`
                                                     : '0%'
                                             }</strong></span>
                                         </div>
@@ -706,7 +913,7 @@ export default function KnowledgePage() {
                                                     </span>
                                                 </div>
                                                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                                                    RAG Intelligence Engine
+                                                    {selectedSearchDoc !== 'ALL' ? `Filtered to: ${selectedSearchDoc}` : 'RAG Intelligence Engine'}
                                                 </span>
                                             </div>
                                             <div className="text-xs text-slate-200 leading-relaxed font-sans whitespace-pre-wrap">
@@ -715,24 +922,42 @@ export default function KnowledgePage() {
                                         </div>
                                     )}
 
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
                                         <p className="text-xs font-semibold text-white flex items-center gap-1.5">
                                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                                             <span>Retrieved Semantic Grounding Context ({filteredQueryResults?.length || 0}):</span>
                                         </p>
+                                        {selectedSearchDoc !== 'ALL' && (
+                                            <span className="text-[11px] font-mono text-indigo-300 bg-indigo-950/60 border border-indigo-800/60 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+                                                <Filter className="w-3 h-3 text-cyan-400" />
+                                                File: <span className="font-semibold text-white">{selectedSearchDoc}</span>
+                                            </span>
+                                        )}
                                     </div>
 
                                     {!filteredQueryResults || filteredQueryResults.length === 0 ? (
                                         <div className="p-8 text-center bg-slate-950/60 border border-dashed border-slate-800 rounded-2xl space-y-2">
                                             <Database className="w-7 h-7 text-slate-600 mx-auto" />
                                             <p className="text-xs font-medium text-slate-400">
-                                                No semantic matches met the cutoff score.
+                                                {selectedSearchDoc !== 'ALL'
+                                                    ? `No semantic matches found in "${selectedSearchDoc}" for this query.`
+                                                    : 'No semantic matches met the cutoff score.'}
                                             </p>
+                                            {selectedSearchDoc !== 'ALL' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDocFilterChange('ALL')}
+                                                    className="text-xs text-indigo-400 hover:text-indigo-300 underline underline-offset-2 font-medium cursor-pointer"
+                                                >
+                                                    Search across all indexed documents instead →
+                                                </button>
+                                            )}
                                         </div>
                                     ) : (
                                         filteredQueryResults.map((r, idx) => {
-                                            const scorePct = (r.score * 100).toFixed(1);
-                                            const numScore = r.score * 100;
+                                            const rawScore = typeof r.score === 'number' ? r.score : parseFloat(r.score) || 0;
+                                            const numScore = rawScore > 1.0 ? Math.min(100, rawScore) : Math.min(100, rawScore * 100);
+                                            const scorePct = numScore.toFixed(1);
                                             const isOptimal = numScore >= 75;
                                             const isGood = numScore >= 50 && numScore < 75;
                                             const wordCount = r.text ? r.text.trim().split(/\s+/).length : 0;
@@ -760,6 +985,11 @@ export default function KnowledgePage() {
                                                             <span className="px-2.5 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-300 font-mono text-[11px] font-semibold border border-indigo-500/20 truncate max-w-[180px]">
                                                                 {r.doc_name}
                                                             </span>
+                                                            {r.text && (r.text.includes('[Visual Asset') || r.text.includes('Detected Palette') || r.text.includes('=== BRAND VISUAL')) && (
+                                                                <span className="px-2 py-0.5 rounded-lg bg-pink-500/15 text-pink-300 font-mono text-[10px] font-bold border border-pink-500/30 flex items-center gap-1">
+                                                                    <ImageIcon className="w-3 h-3 text-pink-400" /> Multimodal Vision Chunk
+                                                                </span>
+                                                            )}
                                                             <span className="text-[11px] font-mono text-slate-500">Chunk #{r.chunk_index}</span>
                                                             <span className="text-[10px] text-slate-600">• {wordCount} words</span>
                                                         </div>

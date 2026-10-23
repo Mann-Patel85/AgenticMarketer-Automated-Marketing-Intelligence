@@ -1,7 +1,11 @@
 import axios from 'axios';
 
-// Direct connection to FastAPI backend server on port 8000 to prevent Next.js dev proxy socket timeout
-export const BACKEND_SERVER_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+// Direct connection to FastAPI backend server on port 8000 (auto-detects LAN IP when accessed on mobile/tablet)
+export const BACKEND_SERVER_URL =
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+        ? `${window.location.protocol}//${window.location.hostname}:8000`
+        : 'http://localhost:8000');
 export const API_BASE_URL = `${BACKEND_SERVER_URL}/api`;
 
 const API = axios.create({
@@ -65,9 +69,23 @@ export const deleteDocument = async (filename) => {
     return res.data;
 };
 
-export const queryKnowledgeBase = async (query, topK = 4) => {
+export const analyzeCampaignBrief = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await API.post('/rag/analyze-brief', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+};
+
+export const queryKnowledgeBase = async (query, topK = 4, filename = null) => {
     try {
-        const res = await API.post('/rag/query', { query, top_k: topK });
+        const payload = { query, top_k: topK };
+        if (filename && filename !== 'ALL') {
+            payload.filename = filename;
+            payload.doc_filter = [filename];
+        }
+        const res = await API.post('/rag/query', payload);
         return res.data;
     } catch (err) {
         console.warn('Backend /rag/query unreachable:', err?.message || err);

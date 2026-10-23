@@ -236,3 +236,21 @@ backend/.env
 *.env
 .env*.local
 .venv/
+
+# Scratch & test directories
+scratch/
+backend/data/scratch_test/
+Backend/data/scratch_test/
+
+# Runtime uploaded documents & generated images
+Backend/data/uploads/*
+backend/data/uploads/*
+!Backend/data/uploads/.gitkeep
+!backend/data/uploads/.gitkeep
+!Backend/data/uploads/images/
+!backend/data/uploads/images/
+Backend/data/uploads/images/*
+backend/data/uploads/images/*
+!Backend/data/uploads/images/.gitkeep
+!backend/data/uploads/images/.gitkeep
+

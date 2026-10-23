@@ -135,8 +135,9 @@ async def health_check():
         "grok_api_configured": bool(settings.effective_grok_token),
         "grok_model": settings.GROK_MODEL,
         "image_model": settings.effective_image_model,
-        "huggingface_model": settings.HUGGINGFACE_IMAGE_MODEL,
-        "huggingface_configured": bool(settings.effective_hf_token),
+        "cloudflare_model": settings.CLOUDFLARE_IMAGE_MODEL,
+        "cloudflare_configured": bool(settings.effective_cloudflare_token and settings.effective_cloudflare_account_id),
+        "eden_ai_configured": bool(settings.effective_eden_ai_token),
         "image_generation_enabled": True,
         "generated_images_count": images_count,
     }

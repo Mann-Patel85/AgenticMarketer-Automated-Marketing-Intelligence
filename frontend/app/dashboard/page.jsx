@@ -7,6 +7,7 @@ import {
     fetchDocuments,
     uploadDocument,
     deleteDocument,
+    analyzeCampaignBrief,
     runSwarmSync,
     broadcastCampaign,
     fetchUserWorkspace,
@@ -57,6 +58,7 @@ import {
     ExternalLink,
     ArrowUpRight,
     Loader2,
+    Paperclip,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -80,6 +82,19 @@ function cleanMarkdownText(text) {
     // Clean excessive blank lines
     t = t.replace(/\n{3,}/g, '\n\n');
     return t.trim();
+}
+
+// Clean label formatter for AI diffusion model badge
+function formatImageModelLabel(model) {
+    if (!model) return '';
+    const m = model.toLowerCase();
+    if (m.includes('flux') || m.includes('cloudflare') || m.includes('@cf/')) {
+        return 'FLUX.1 Schnell (Edge)';
+    }
+    return model
+        .replace(/^(huggingface|black-forest-labs|cloudflare)\//i, '')
+        .replace(/^@cf\/(?:[^\/]+\/)?/i, '')
+        .trim();
 }
 
 // Parse markdown marketing bundle into structured channel assets
@@ -327,8 +342,16 @@ export default function DashboardPage() {
     const [tone, setTone] = useState('Authoritative & High-Energy');
     const [isDragging, setIsDragging] = useState(false);
 
+    // Multimodal Brief & Brand Playbook Grounding State
+    const [selectedBrandPlaybook, setSelectedBrandPlaybook] = useState('auto'); // 'auto' | 'none' | specific filename
+    const [attachedBrief, setAttachedBrief] = useState(null); // { filename, file_type, summary, raw_context }
+    const [isAnalyzingBrief, setIsAnalyzingBrief] = useState(false);
+    const [briefError, setBriefError] = useState(null);
+    const briefFileInputRef = useRef(null);
+
     // Grounding Files Queue State
     const [fileQueue, setFileQueue] = useState([]);
+    const [selectedFiles, setSelectedFiles] = useState({});
     const [generatedImageUrl, setGeneratedImageUrl] = useState(null);
     const [visualPrompt, setVisualPrompt] = useState('');
     const [brandImagePrompt, setBrandImagePrompt] = useState('');
@@ -360,18 +383,31 @@ export default function DashboardPage() {
     const [copyViewMode, setCopyViewMode] = useState('studio'); // 'studio' | 'markdown'
     const [copyFilter, setCopyFilter] = useState('all'); // 'all' | 'headlines' | 'linkedin' | 'twitter' | 'email' | 'meta' | 'visual'
     const [copiedSection, setCopiedSection] = useState(null);
+    const [toastNotification, setToastNotification] = useState(null);
+    const toastTimeoutRef = useRef(null);
 
     const parsedBundle = useMemo(() => {
         return parseMarketingBundle(generatedOutput);
     }, [generatedOutput]);
 
-    const copyToClipboard = (text, sectionKey = 'all') => {
+    const campaignTitle = useMemo(() => {
+        return parsedBundle?.title || campaignGoal || 'Autonomous Marketing Visual';
+    }, [parsedBundle, campaignGoal]);
+
+    const copyToClipboard = (text, sectionKey = 'all', toastLabel = 'Copied to clipboard!') => {
         if (!text) return;
-        navigator.clipboard.writeText(text);
+        try {
+            navigator.clipboard.writeText(text);
+        } catch (e) {
+            console.warn('Clipboard write error:', e);
+        }
         setCopiedSection(sectionKey);
-        setTimeout(() => {
-            setCopiedSection(null);
-        }, 2200);
+        setToastNotification(toastLabel);
+        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = setTimeout(() => {
+            setCopiedSection((prev) => (prev === sectionKey ? null : prev));
+            setToastNotification(null);
+        }, 2000);
     };
 
     const handleRunSEOAudit = async (e) => {
@@ -580,7 +616,7 @@ export default function DashboardPage() {
         {
             id: 'research',
             name: 'Research Agent',
-            role: 'DuckDuckGo SERP Intel',
+            role: 'Live Market & SERP Intel',
             icon: Search,
             color: 'from-violet-500 to-indigo-500',
             borderColor: 'border-violet-500/30',
@@ -605,7 +641,7 @@ export default function DashboardPage() {
             color: 'from-fuchsia-500 to-pink-500',
             borderColor: 'border-fuchsia-500/30',
             textColor: 'text-fuchsia-400',
-            description: 'Produces high-impact 4K marketing visual assets via Hugging Face FLUX and Brand Compositor.',
+            description: 'Cloudflare Edge Diffusion (@cf/black-forest-labs/flux-1-schnell)',
         },
         {
             id: 'seo',
@@ -664,6 +700,7 @@ export default function DashboardPage() {
         if (ws.campaignGoal !== undefined && ws.campaignGoal !== null && ws.campaignGoal !== '') {
             setCampaignGoal(ws.campaignGoal);
         }
+        if (ws.selectedBrandPlaybook) setSelectedBrandPlaybook(ws.selectedBrandPlaybook);
         if (ws.targetAudience) setTargetAudience(ws.targetAudience);
         if (ws.tone) setTone(ws.tone);
         if (ws.generatedOutput) setGeneratedOutput(ws.generatedOutput);
@@ -728,6 +765,7 @@ export default function DashboardPage() {
 
         const bundle = {
             campaignGoal,
+            selectedBrandPlaybook,
             targetAudience,
             tone,
             generatedOutput,
@@ -817,11 +855,35 @@ export default function DashboardPage() {
         }
     };
 
+    const handleBriefFileUpload = async (file) => {
+        if (!file) return;
+        setIsAnalyzingBrief(true);
+        setBriefError(null);
+        try {
+            const data = await analyzeCampaignBrief(file);
+            if (data?.success) {
+                setAttachedBrief({
+                    filename: data.filename,
+                    file_type: data.file_type,
+                    summary: data.summary,
+                    raw_context: data.full_brief_content,
+                });
+            } else {
+                setBriefError('Could not process brief file. Please check format.');
+            }
+        } catch (err) {
+            console.error('Brief analysis failed:', err);
+            setBriefError(err?.response?.data?.detail || err?.message || 'Brief analysis failed');
+        } finally {
+            setIsAnalyzingBrief(false);
+        }
+    };
+
     const handleLaunchSwarm = async () => {
         if (isExecuting) return;
 
-        const effectiveGoal = campaignGoal.trim() || 'Launch an autonomous AI growth campaign to capture mid-market B2B accounts.';
-        if (!campaignGoal.trim()) {
+        const effectiveGoal = campaignGoal.trim() || (attachedBrief ? `Campaign grounded in attached ${attachedBrief.file_type} brief (${attachedBrief.filename}): ${attachedBrief.summary?.slice(0, 100) || 'Multimodal product launch'}` : 'Launch an autonomous AI growth campaign to capture mid-market B2B accounts.');
+        if (!campaignGoal.trim() && !attachedBrief) {
             setCampaignGoal(effectiveGoal);
         }
 
@@ -840,9 +902,15 @@ export default function DashboardPage() {
 
         const timestamp = () => new Date().toLocaleTimeString();
 
+        const playbookLabel = selectedBrandPlaybook === 'none' 
+            ? 'Brand Playbook: None (Clean Slate)' 
+            : selectedBrandPlaybook === 'auto' 
+                ? `Auto-detecting brand guidelines for: "${effectiveGoal.slice(0, 35)}..."` 
+                : `Grounded to brand playbook: "${selectedBrandPlaybook}"`;
+
         setExecutionLogs([
             { id: 1, time: timestamp(), agent: 'System', text: 'Initializing 6-Agent Autonomous Swarm Orchestrator...' },
-            { id: 2, time: timestamp(), agent: 'Ingestion Agent', text: `Querying ChromaDB vector collections matching: "${effectiveGoal.slice(0, 45)}..."` },
+            { id: 2, time: timestamp(), agent: 'Ingestion Agent', text: attachedBrief ? `Multimodal brief (${attachedBrief.filename}) parsed. ${playbookLabel}` : playbookLabel },
         ]);
 
         let step = 0;
@@ -857,7 +925,9 @@ export default function DashboardPage() {
 
         try {
             const activeChannels = Object.keys(publishPlatforms).filter((k) => publishPlatforms[k]);
-            const activeFiles = fileQueue.map((f) => f.name || f.id);
+            const activeFiles = fileQueue
+                .filter((f) => selectedFiles[f.name || f.id] ?? true)
+                .map((f) => f.name || f.id);
             const result = await runSwarmSync({
                 goal: effectiveGoal,
                 audience: targetAudience,
@@ -865,6 +935,8 @@ export default function DashboardPage() {
                 content_type: contentType,
                 channels: activeChannels.length > 0 ? activeChannels : ['linkedin', 'x', 'meta'],
                 files: activeFiles,
+                brand_playbook: selectedBrandPlaybook,
+                brief_content: attachedBrief ? attachedBrief.raw_context : null,
             });
 
             clearInterval(progressTimer);
@@ -921,7 +993,7 @@ export default function DashboardPage() {
             } else {
                 setExecutionLogs((prev) => [
                     ...prev,
-                    { id: Date.now(), time: timestamp(), agent: 'Research Agent', text: 'Retrieved live competitor signals and trends via DuckDuckGo SERP.' },
+                    { id: Date.now(), time: timestamp(), agent: 'Research Agent', text: 'Retrieved live competitor signals and trends via Live Market SERP & News.' },
                     { id: Date.now() + 1, time: timestamp(), agent: 'Copywriter Agent', text: 'Synthesized multi-channel copy & creative visual prompts via Groq LPU.' },
                     { id: Date.now() + 2, time: timestamp(), agent: 'Image Generation Agent', text: bundle.generated_image_url ? `Campaign visual generated: ${bundle.generated_image_url}` : 'Visual asset formatted.' },
                     { id: Date.now() + 3, time: timestamp(), agent: 'SEO & Analytics Agent', text: `Readability score: ${bundle.seo_metrics?.readability_score || 85}/100 | Intent Match: ${bundle.seo_metrics?.intent_match || '90%'}` },
@@ -1055,13 +1127,13 @@ export default function DashboardPage() {
     const handleCopyOutput = () => {
         if (!generatedOutput) return;
         if (copyViewMode === 'markdown') {
-            copyToClipboard(generatedOutput, 'bundle_all');
+            copyToClipboard(generatedOutput, 'bundle_all', 'Copied raw Markdown to clipboard!');
         } else {
             const cleanText = cleanMarkdownText(generatedOutput);
-            copyToClipboard(cleanText, 'bundle_all');
+            copyToClipboard(cleanText, 'bundle_all', 'Copied campaign bundle to clipboard!');
         }
         setCopied(true);
-        setTimeout(() => setCopied(false), 2200);
+        setTimeout(() => setCopied(false), 2000);
     };
 
     const handleDownloadOutput = (format = 'txt') => {
@@ -1160,11 +1232,11 @@ export default function DashboardPage() {
                                 </span>
                             </div>
                             <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-                                Orchestrate vector retrieval, live DuckDuckGo SERP intel, Groq LPU high-speed copy synthesis, and omnichannel publishing.
+                                Orchestrate vector retrieval, live market & SERP intel, Groq LPU high-speed copy synthesis, and omnichannel publishing.
                             </p>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2.5">
+                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5">
                             {saveStatus === 'saving' && (
                                 <span className="px-2.5 py-1 rounded-full text-[11px] font-mono bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center gap-1.5 shadow-sm">
                                     <RotateCcw className="w-3 h-3 animate-spin" />
@@ -1244,7 +1316,7 @@ export default function DashboardPage() {
                             {agents.map((agent, index) => {
                                 const IconComponent = agent.icon;
                                 const isActive = isExecuting && activeAgentIndex === index;
-                                const isCompleted = isExecuting ? activeAgentIndex > index : generatedOutput !== '';
+                                const isCompleted = isExecuting ? activeAgentIndex > index : (generatedOutput !== '');
 
                                 return (
                                     <motion.div
@@ -1252,7 +1324,7 @@ export default function DashboardPage() {
                                         layout
                                         className={`relative p-3.5 rounded-2xl border transition-all duration-300 ${
                                             isActive
-                                                ? `bg-slate-900/90 ${agent.borderColor} shadow-xl shadow-indigo-500/20 ring-1 ring-indigo-500/40 glow-indigo`
+                                                ? `bg-slate-900/90 ${agent.borderColor} shadow-xl shadow-amber-500/20 ring-1 ring-amber-500/40 glow-indigo`
                                                 : isCompleted
                                                 ? 'bg-slate-900/70 border-emerald-500/30'
                                                 : 'cyber-card'
@@ -1265,32 +1337,37 @@ export default function DashboardPage() {
 
                                             <div>
                                                 {isActive ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1 animate-pulse">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
-                                                        Active
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold animate-pulse bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center gap-1.5 shadow-sm">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                                                        Thinking...
                                                     </span>
                                                 ) : isCompleted ? (
                                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                                                        <CheckCircle2 className="w-3 h-3" /> Ready
+                                                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                                        <span>✓ Complete</span>
                                                     </span>
                                                 ) : (
-                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono text-slate-500 bg-slate-800/80 border border-slate-700/60">
-                                                        Idle
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium text-slate-400 bg-slate-800/80 border border-slate-700/60 flex items-center gap-1">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/80" />
+                                                        Ready
                                                     </span>
                                                 )}
                                             </div>
                                         </div>
 
-                                        <h3 className="text-xs font-bold text-white leading-tight">{agent.name}</h3>
-                                        <p className={`text-[10px] font-medium mt-0.5 ${agent.textColor}`}>{agent.role}</p>
-                                        <p className="text-[10px] text-slate-400 mt-2 line-clamp-2 leading-relaxed">
+                                        <h3 className="text-xs font-bold text-white leading-tight truncate">{agent.name}</h3>
+                                        <p className={`text-[10px] font-medium mt-0.5 truncate ${agent.textColor}`}>{agent.role}</p>
+                                        <p
+                                            title={agent.description}
+                                            className="truncate text-[11px] text-slate-400 mt-2 block"
+                                        >
                                             {agent.description}
                                         </p>
 
                                         {isActive && (
-                                            <div className="mt-2.5 pt-2 border-t border-slate-800 flex items-center gap-1.5 text-[10px] text-indigo-300 font-mono">
-                                                <Sparkles className="w-3 h-3 animate-spin" />
-                                                <span>Orchestrating...</span>
+                                            <div className="mt-2.5 pt-2 border-t border-slate-800 flex items-center gap-1.5 text-[10px] text-amber-300 font-mono animate-pulse">
+                                                <Sparkles className="w-3 h-3 animate-spin text-amber-400" />
+                                                <span>Processing...</span>
                                             </div>
                                         )}
                                     </motion.div>
@@ -1302,7 +1379,7 @@ export default function DashboardPage() {
                     {/* Workspace Split: Control Panel (Left) & Feed / Output (Right) */}
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                         {/* Control Panel (5 cols) */}
-                        <div className="lg:col-span-5 space-y-5">
+                        <div className="lg:col-span-5 col-span-12 space-y-5">
                             <div className="cyber-card rounded-3xl p-5 sm:p-6 space-y-5">
                                 <div className="flex items-center justify-between border-b border-slate-800/80 pb-3.5">
                                     <div className="flex items-center gap-2">
@@ -1386,11 +1463,43 @@ export default function DashboardPage() {
                                     </div>
                                 </div>
 
-                                {/* Campaign Goal Input */}
+                                {/* Brand Playbook Selector */}
+                                <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label htmlFor="brand-playbook-select" className="text-xs font-semibold text-slate-200 flex items-center space-x-1.5">
+                                            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                                            <span>Brand Playbook Grounding</span>
+                                        </label>
+                                        <span className="text-[10px] text-slate-500 font-mono">
+                                            {selectedBrandPlaybook === 'auto' ? 'Auto-Detect Relevance' : selectedBrandPlaybook === 'none' ? 'Clean Slate' : 'Locked to Guide'}
+                                        </span>
+                                    </div>
+                                    <select
+                                        id="brand-playbook-select"
+                                        value={selectedBrandPlaybook}
+                                        onChange={(e) => setSelectedBrandPlaybook(e.target.value)}
+                                        className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
+                                    >
+                                        <option value="auto">🤖 Auto-Detect (Disambiguate & Match Relevant Brand Guidelines)</option>
+                                        <option value="none">🌐 None (New Unaffiliated Brand — Zero Corporate Guidelines)</option>
+                                        {fileQueue.length > 0 && (
+                                            <optgroup label="Ground Exclusively to Brand Guide">
+                                                {fileQueue.map((f) => (
+                                                    <option key={f.id || f.name} value={f.name || f.id}>
+                                                        📄 {f.name} ({f.chunks || 0} Chunks)
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        )}
+                                    </select>
+                                </div>
+
+                                {/* Campaign Goal Input & Multimodal Brief */}
                                 <div>
                                     <div className="flex items-center justify-between mb-1.5">
-                                        <label htmlFor="campaign-goal" className="text-xs font-semibold text-slate-200">
-                                            Campaign Goal & Directives <span className="text-rose-400">*</span>
+                                        <label htmlFor="campaign-goal" className="text-xs font-semibold text-slate-200 flex items-center space-x-1.5">
+                                            <span>Campaign Goal & Directives</span>
+                                            {!attachedBrief && <span className="text-rose-400">*</span>}
                                         </label>
                                         <span className="text-[10px] text-slate-500 font-mono">
                                             {campaignGoal.length}/500 chars
@@ -1398,12 +1507,99 @@ export default function DashboardPage() {
                                     </div>
                                     <textarea
                                         id="campaign-goal"
-                                        rows={4}
+                                        rows={3}
                                         value={campaignGoal}
                                         onChange={(e) => setCampaignGoal(e.target.value)}
-                                        placeholder="Describe your marketing objective (e.g. 'Launch our new autonomous AI marketing swarm, targeting VP Marketers with emphasis on ground-truth FAISS accuracy and automated omnichannel broadcasting')..."
+                                        placeholder={
+                                            attachedBrief 
+                                                ? `Brief attached: "${attachedBrief.filename}". Enter extra instructions or leave blank to run purely from brief...` 
+                                                : "Describe campaign directives (e.g. 'Launch our new perfume named gysto with vibrant notes') or attach an image/PDF brief below..."
+                                        }
                                         className="w-full bg-slate-950/90 border border-slate-800 rounded-2xl p-3 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 transition resize-none leading-relaxed"
                                     />
+
+                                    {/* Multimodal Brief Attachment Zone */}
+                                    <div className="mt-2">
+                                        <input
+                                            type="file"
+                                            ref={briefFileInputRef}
+                                            onChange={(e) => {
+                                                if (e.target.files?.[0]) {
+                                                    handleBriefFileUpload(e.target.files[0]);
+                                                    e.target.value = '';
+                                                }
+                                            }}
+                                            accept=".png,.jpg,.jpeg,.webp,.pdf,.docx,.txt"
+                                            className="hidden"
+                                            id="campaign-brief-upload"
+                                        />
+
+                                        {!attachedBrief && !isAnalyzingBrief && (
+                                            <div 
+                                                 onClick={() => briefFileInputRef.current?.click()}
+                                                 className="flex items-center justify-between px-3.5 py-2.5 bg-slate-950/60 hover:bg-slate-900/80 border border-dashed border-slate-800 hover:border-indigo-500/50 rounded-xl transition cursor-pointer group"
+                                            >
+                                                <div className="flex items-center space-x-2 text-slate-400 group-hover:text-slate-200 text-xs">
+                                                    <Paperclip className="w-3.5 h-3.5 text-indigo-400 group-hover:rotate-45 transition-transform" />
+                                                    <span className="text-[11px] font-medium">Attach Multimodal Brief (Product Photo, Diagram, PDF, TXT)</span>
+                                                </div>
+                                                <span className="text-[10px] px-2 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 group-hover:bg-indigo-500/20 font-medium">
+                                                    Upload Brief
+                                                </span>
+                                            </div>
+                                        )}
+
+                                        {isAnalyzingBrief && (
+                                            <div className="flex items-center space-x-2.5 px-3 py-2.5 bg-indigo-950/30 border border-indigo-500/40 rounded-xl text-indigo-200 text-xs">
+                                                <Loader2 className="w-4 h-4 animate-spin text-indigo-400 shrink-0" />
+                                                <div className="min-w-0">
+                                                    <p className="font-semibold text-[11px]">Analyzing Brief with Multimodal Vision AI...</p>
+                                                    <p className="text-[10px] text-indigo-400/80">Extracting color palettes, product diagrams & visual specs</p>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {attachedBrief && !isAnalyzingBrief && (
+                                            <div className="flex items-start justify-between p-2.5 bg-indigo-950/20 border border-indigo-500/40 rounded-xl">
+                                                <div className="flex items-start space-x-2.5 min-w-0 pr-2">
+                                                    <div className="p-1.5 bg-indigo-500/20 border border-indigo-500/30 rounded-lg text-indigo-300 shrink-0 mt-0.5">
+                                                        {attachedBrief.file_type === 'image' ? (
+                                                            <ImageIcon className="w-3.5 h-3.5" />
+                                                        ) : (
+                                                            <FileText className="w-3.5 h-3.5" />
+                                                        )}
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center space-x-2">
+                                                            <span className="font-semibold text-xs text-slate-200 truncate max-w-[200px]">
+                                                                {attachedBrief.filename}
+                                                            </span>
+                                                            <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono font-medium">
+                                                                {attachedBrief.file_type} Brief Attached
+                                                            </span>
+                                                        </div>
+                                                        {attachedBrief.summary && (
+                                                            <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">
+                                                                {attachedBrief.summary}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAttachedBrief(null)}
+                                                    className="text-slate-400 hover:text-rose-400 p-1 rounded-lg hover:bg-rose-500/10 transition shrink-0 cursor-pointer"
+                                                    title="Remove attached brief"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {briefError && (
+                                            <p className="text-[10px] text-rose-400 mt-1 pl-1">{briefError}</p>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Parameters Grid */}
@@ -1605,12 +1801,25 @@ export default function DashboardPage() {
                                         </div>
                                     ) : (
                                         <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
-                                            {fileQueue.map((file) => (
+                                            {fileQueue.map((file) => {
+                                                const isChecked = selectedFiles[file.name || file.id] ?? true;
+                                                return (
                                                 <div
                                                     key={file.id}
-                                                    className="flex items-center justify-between p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs"
+                                                    className={`flex items-center justify-between p-2.5 rounded-xl text-xs border transition ${
+                                                        isChecked
+                                                            ? 'bg-slate-950/80 border-slate-800'
+                                                            : 'bg-slate-950/40 border-slate-900 opacity-60'
+                                                    }`}
                                                 >
                                                     <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={(e) => setSelectedFiles((prev) => ({ ...prev, [file.name || file.id]: e.target.checked }))}
+                                                            className="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                                                            title="Toggle grounding for this campaign"
+                                                        />
                                                         <div className="p-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg shrink-0">
                                                             <FileText className="w-3.5 h-3.5 text-indigo-400" />
                                                         </div>
@@ -1625,8 +1834,12 @@ export default function DashboardPage() {
                                                     </div>
 
                                                     <div className="flex items-center space-x-2 shrink-0">
-                                                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                                                            <CheckCircle2 className="w-3 h-3" /> {file.status}
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium border flex items-center gap-1 ${
+                                                            isChecked
+                                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                                : 'bg-slate-800 text-slate-400 border-slate-700'
+                                                        }`}>
+                                                            <CheckCircle2 className="w-3 h-3" /> {isChecked ? file.status : 'Disabled'}
                                                         </span>
                                                         <button
                                                             type="button"
@@ -1638,7 +1851,8 @@ export default function DashboardPage() {
                                                         </button>
                                                     </div>
                                                 </div>
-                                            ))}
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
@@ -1796,7 +2010,7 @@ export default function DashboardPage() {
                         </div>
 
                         {/* Swarm Output & Visual Studio (7 cols) */}
-                        <div className="lg:col-span-7 space-y-4">
+                        <div className="lg:col-span-7 col-span-12 space-y-4">
                             {/* Auto-Publish Notification Banner */}
                             {autoPublishResult && autoPublishResult.success && (
                                 <div className="p-4 bg-emerald-500/15 border border-emerald-500/30 rounded-2xl text-xs text-emerald-200 flex items-center justify-between gap-3 shadow-lg shadow-emerald-500/5">
@@ -1941,7 +2155,7 @@ export default function DashboardPage() {
                                             {copied ? (
                                                 <>
                                                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                    <span>Copied!</span>
+                                                    <span>✓ Copied!</span>
                                                 </>
                                             ) : (
                                                 <>
@@ -2044,11 +2258,21 @@ export default function DashboardPage() {
                                                                     <button
                                                                         key={f.id}
                                                                         type="button"
-                                                                        onClick={() => setCopyFilter(f.id)}
-                                                                        className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer whitespace-nowrap ${
+                                                                        onClick={() => {
+                                                                            setCopyFilter(f.id);
+                                                                            if (f.id !== 'all') {
+                                                                                setTimeout(() => {
+                                                                                    const el = document.getElementById(`channel-card-${f.id}`);
+                                                                                    if (el) {
+                                                                                        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                                                    }
+                                                                                }, 50);
+                                                                            }
+                                                                        }}
+                                                                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer whitespace-nowrap ${
                                                                             copyFilter === f.id
-                                                                                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                                                                                : 'bg-slate-900/60 text-slate-400 hover:text-slate-300 border border-transparent'
+                                                                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 border border-indigo-500 font-semibold'
+                                                                                : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-slate-800/60'
                                                                         }`}
                                                                     >
                                                                         {f.label}
@@ -2065,13 +2289,13 @@ export default function DashboardPage() {
                                                                 <span>RAW COMPONENT MARKDOWN CODE</span>
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => copyToClipboard(generatedOutput, 'raw_md')}
+                                                                    onClick={() => copyToClipboard(generatedOutput, 'raw_md', 'Copied raw Markdown to clipboard!')}
                                                                     className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 font-sans cursor-pointer"
                                                                 >
                                                                     {copiedSection === 'raw_md' ? (
                                                                         <>
                                                                             <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                            <span className="text-emerald-400">Copied!</span>
+                                                                            <span className="text-emerald-400 font-semibold">✓ Copied!</span>
                                                                         </>
                                                                     ) : (
                                                                         <>
@@ -2087,14 +2311,14 @@ export default function DashboardPage() {
                                                         </div>
                                                     ) : (
                                                         /* VIEW 2: CLEAN STUDIO VIEW */
-                                                        <div className="space-y-4 overflow-y-auto max-h-[540px] pr-1">
+                                                        <div className="space-y-4 overflow-y-auto max-h-[540px] pr-1 scroll-smooth">
                                                             {/* Campaign Header Overview Card & Multimodal Creative Showcase */}
                                                             <div className="p-4 rounded-2xl bg-gradient-to-r from-indigo-950/50 via-slate-900/90 to-slate-900/70 border border-indigo-500/30 space-y-3 shadow-xl shadow-indigo-950/30">
                                                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                                                                     <div className="space-y-1">
                                                                         <div className="flex items-center gap-2">
                                                                             <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
-                                                                                <Sparkles className="w-3 h-3 text-indigo-400" />
+                                                                                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
                                                                                 Autonomous Swarm Verified
                                                                             </span>
                                                                             <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
@@ -2111,13 +2335,17 @@ export default function DashboardPage() {
                                                                     <div className="flex items-center gap-2">
                                                                         <button
                                                                             type="button"
-                                                                            onClick={() => copyToClipboard(parsedBundle?.cleanFull || cleanMarkdownText(generatedOutput), 'bundle_all')}
-                                                                            className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition flex items-center gap-1.5 shadow-md shadow-indigo-600/30 cursor-pointer"
+                                                                            onClick={() => copyToClipboard(parsedBundle?.cleanFull || cleanMarkdownText(generatedOutput), 'bundle_all', 'Copied all 12 channel formats to clipboard!')}
+                                                                            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-md cursor-pointer ${
+                                                                                copiedSection === 'bundle_all'
+                                                                                    ? 'bg-emerald-600 text-white shadow-emerald-600/30 ring-1 ring-emerald-400'
+                                                                                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30'
+                                                                            }`}
                                                                         >
                                                                             {copiedSection === 'bundle_all' ? (
                                                                                 <>
-                                                                                    <CheckCheck className="w-4 h-4 text-white" />
-                                                                                    <span>Copied Clean Bundle!</span>
+                                                                                    <Check className="w-4 h-4 text-emerald-200" />
+                                                                                    <span>✓ Copied!</span>
                                                                                 </>
                                                                             ) : (
                                                                                 <>
@@ -2179,7 +2407,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION 0: Universal Master Copy (Post Anywhere) */}
                                                             {(copyFilter === 'all' || copyFilter === 'universal') && parsedBundle?.universal && (
-                                                                <div className="bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-slate-900/70 border border-indigo-500/30 rounded-2xl p-4 space-y-3 shadow-lg hover:border-indigo-500/50 transition">
+                                                                <div id="channel-card-universal" className="bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-slate-900/70 border border-indigo-500/30 rounded-2xl p-4 space-y-3 shadow-lg hover:border-indigo-500/50 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-indigo-500/20">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-300">
@@ -2201,13 +2429,17 @@ export default function DashboardPage() {
                                                                             </span>
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={() => copyToClipboard(parsedBundle.universal, 'universal_post')}
-                                                                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 transition flex items-center gap-1 cursor-pointer"
+                                                                                onClick={() => copyToClipboard(parsedBundle.universal, 'universal_post', 'Copied Universal Master Copy to clipboard!')}
+                                                                                className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer ${
+                                                                                    copiedSection === 'universal_post'
+                                                                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                                                        : 'bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30'
+                                                                                }`}
                                                                             >
                                                                                 {copiedSection === 'universal_post' ? (
                                                                                     <>
                                                                                         <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                        <span className="text-emerald-400">Master Copy Copied!</span>
+                                                                                        <span className="text-emerald-400">✓ Copied!</span>
                                                                                     </>
                                                                                 ) : (
                                                                                     <>
@@ -2229,7 +2461,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION 1: Hooks & Headlines */}
                                                             {(copyFilter === 'all' || copyFilter === 'headlines') && parsedBundle?.headlines && (
-                                                                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition">
+                                                                <div id="channel-card-headlines" className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400">
@@ -2249,14 +2481,18 @@ export default function DashboardPage() {
                                                                             type="button"
                                                                             onClick={() => {
                                                                                 const hooksText = parsedBundle.headlines.map(h => `${h.label}:\n${h.text}`).join('\n\n');
-                                                                                copyToClipboard(hooksText, 'all_hooks');
+                                                                                copyToClipboard(hooksText, 'all_hooks', 'Copied all hook variants to clipboard!');
                                                                             }}
-                                                                            className="text-[11px] text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 cursor-pointer"
+                                                                            className={`text-[11px] font-medium flex items-center gap-1 cursor-pointer transition ${
+                                                                                copiedSection === 'all_hooks'
+                                                                                    ? 'text-emerald-400 font-semibold'
+                                                                                    : 'text-indigo-400 hover:text-indigo-300'
+                                                                            }`}
                                                                         >
                                                                             {copiedSection === 'all_hooks' ? (
                                                                                 <>
                                                                                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                    <span className="text-emerald-400">All Copied</span>
+                                                                                    <span className="text-emerald-400">✓ Copied!</span>
                                                                                 </>
                                                                             ) : (
                                                                                 <>
@@ -2283,14 +2519,18 @@ export default function DashboardPage() {
                                                                                 </div>
                                                                                 <button
                                                                                     type="button"
-                                                                                    onClick={() => copyToClipboard(hook.text, `hook_${idx}`)}
-                                                                                    className="self-end md:self-auto px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center gap-1 cursor-pointer opacity-90 group-hover:opacity-100"
+                                                                                    onClick={() => copyToClipboard(hook.text, `hook_${idx}`, `Copied hook (${hook.label}) to clipboard!`)}
+                                                                                    className={`self-end md:self-auto px-2.5 py-1 rounded-lg text-[11px] font-medium transition flex items-center gap-1 cursor-pointer opacity-90 group-hover:opacity-100 ${
+                                                                                        copiedSection === `hook_${idx}`
+                                                                                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                                                                            : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                                                                                    }`}
                                                                                     title="Copy single hook"
                                                                                 >
                                                                                     {copiedSection === `hook_${idx}` ? (
                                                                                         <>
                                                                                             <Check className="w-3 h-3 text-emerald-400" />
-                                                                                            <span className="text-emerald-400">Copied</span>
+                                                                                            <span className="text-emerald-400">✓ Copied!</span>
                                                                                         </>
                                                                                     ) : (
                                                                                         <>
@@ -2307,7 +2547,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION 2: LinkedIn Thought Leadership */}
                                                             {(copyFilter === 'all' || copyFilter === 'linkedin') && parsedBundle?.linkedin && (
-                                                                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition">
+                                                                <div id="channel-card-linkedin" className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
@@ -2329,13 +2569,17 @@ export default function DashboardPage() {
                                                                             </span>
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={() => copyToClipboard(parsedBundle.linkedin, 'linkedin_post')}
-                                                                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 transition flex items-center gap-1 cursor-pointer"
+                                                                                onClick={() => copyToClipboard(parsedBundle.linkedin, 'linkedin_post', 'Copied LinkedIn post to clipboard!')}
+                                                                                className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer ${
+                                                                                    copiedSection === 'linkedin_post'
+                                                                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                                                        : 'bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30'
+                                                                                }`}
                                                                             >
                                                                                 {copiedSection === 'linkedin_post' ? (
                                                                                     <>
                                                                                         <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                        <span className="text-emerald-400">Copied for LinkedIn!</span>
+                                                                                        <span className="text-emerald-400">✓ Copied!</span>
                                                                                     </>
                                                                                 ) : (
                                                                                     <>
@@ -2368,7 +2612,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION 3: X / Twitter 3-Part Thread */}
                                                             {(copyFilter === 'all' || copyFilter === 'twitter') && parsedBundle?.twitter && (
-                                                                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition">
+                                                                <div id="channel-card-twitter" className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200">
@@ -2388,14 +2632,18 @@ export default function DashboardPage() {
                                                                             type="button"
                                                                             onClick={() => {
                                                                                 const threadText = parsedBundle.twitter.map(t => `${t.part}\n${t.text}`).join('\n\n');
-                                                                                copyToClipboard(threadText, 'full_thread');
+                                                                                copyToClipboard(threadText, 'full_thread', 'Copied full X thread to clipboard!');
                                                                             }}
-                                                                            className="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1 cursor-pointer"
+                                                                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer ${
+                                                                                copiedSection === 'full_thread'
+                                                                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                                                                            }`}
                                                                         >
                                                                             {copiedSection === 'full_thread' ? (
                                                                                 <>
                                                                                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                    <span className="text-emerald-400">Thread Copied!</span>
+                                                                                    <span className="text-emerald-400">✓ Copied!</span>
                                                                                 </>
                                                                             ) : (
                                                                                 <>
@@ -2422,7 +2670,7 @@ export default function DashboardPage() {
                                                                                         </span>
                                                                                         <button
                                                                                             type="button"
-                                                                                            onClick={() => copyToClipboard(t.text, `tweet_${idx}`)}
+                                                                                            onClick={() => copyToClipboard(t.text, `tweet_${idx}`, `Copied tweet ${t.part} to clipboard!`)}
                                                                                             className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition cursor-pointer"
                                                                                             title="Copy this tweet"
                                                                                         >
@@ -2445,7 +2693,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION: Reddit Discussion */}
                                                             {(copyFilter === 'all' || copyFilter === 'reddit') && parsedBundle?.reddit && (
-                                                                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition">
+                                                                <div id="channel-card-reddit" className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400">
@@ -2465,14 +2713,18 @@ export default function DashboardPage() {
                                                                             type="button"
                                                                             onClick={() => {
                                                                                 const rText = `Title: ${parsedBundle.reddit.title}\n\n${parsedBundle.reddit.body}`;
-                                                                                copyToClipboard(rText, 'reddit_post');
+                                                                                copyToClipboard(rText, 'reddit_post', 'Copied Reddit discussion post to clipboard!');
                                                                             }}
-                                                                            className="px-3 py-1 rounded-lg text-xs font-semibold bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border border-orange-500/30 transition flex items-center gap-1 cursor-pointer"
+                                                                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer ${
+                                                                                copiedSection === 'reddit_post'
+                                                                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                                                    : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border border-orange-500/30'
+                                                                            }`}
                                                                         >
                                                                             {copiedSection === 'reddit_post' ? (
                                                                                 <>
                                                                                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                    <span className="text-emerald-400">Reddit Copied!</span>
+                                                                                    <span className="text-emerald-400">✓ Copied!</span>
                                                                                 </>
                                                                             ) : (
                                                                                 <>
@@ -2496,7 +2748,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION: Medium / Dev.to Long-Form Article */}
                                                             {(copyFilter === 'all' || copyFilter === 'blog') && parsedBundle?.blog && (
-                                                                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition">
+                                                                <div id="channel-card-blog" className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
@@ -2516,14 +2768,18 @@ export default function DashboardPage() {
                                                                             type="button"
                                                                             onClick={() => {
                                                                                 const bText = `# ${parsedBundle.blog.title}\n\n${parsedBundle.blog.body}`;
-                                                                                copyToClipboard(bText, 'blog_post');
+                                                                                copyToClipboard(bText, 'blog_post', 'Copied blog article to clipboard!');
                                                                             }}
-                                                                            className="px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1 cursor-pointer"
+                                                                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer ${
+                                                                                copiedSection === 'blog_post'
+                                                                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                                                    : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30'
+                                                                            }`}
                                                                         >
                                                                             {copiedSection === 'blog_post' ? (
                                                                                 <>
                                                                                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                    <span className="text-emerald-400">Article Copied!</span>
+                                                                                    <span className="text-emerald-400">✓ Copied!</span>
                                                                                 </>
                                                                             ) : (
                                                                                 <>
@@ -2547,7 +2803,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION: Meta Threads */}
                                                             {(copyFilter === 'all' || copyFilter === 'threads') && parsedBundle?.threads && (
-                                                                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition">
+                                                                <div id="channel-card-threads" className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-400">
@@ -2565,13 +2821,17 @@ export default function DashboardPage() {
                                                                         </div>
                                                                         <button
                                                                             type="button"
-                                                                            onClick={() => copyToClipboard(parsedBundle.threads, 'threads_post')}
-                                                                            className="px-3 py-1 rounded-lg text-xs font-semibold bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/30 transition flex items-center gap-1 cursor-pointer"
+                                                                            onClick={() => copyToClipboard(parsedBundle.threads, 'threads_post', 'Copied Meta Threads post to clipboard!')}
+                                                                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer ${
+                                                                                copiedSection === 'threads_post'
+                                                                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                                                    : 'bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/30'
+                                                                            }`}
                                                                         >
                                                                             {copiedSection === 'threads_post' ? (
                                                                                 <>
                                                                                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                    <span className="text-emerald-400">Threads Copied!</span>
+                                                                                    <span className="text-emerald-400">✓ Copied!</span>
                                                                                 </>
                                                                             ) : (
                                                                                 <>
@@ -2636,7 +2896,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION: Short-Form Video Script (Reels / TikTok / Shorts) */}
                                                             {(copyFilter === 'all' || copyFilter === 'reels') && parsedBundle?.reels && (
-                                                                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition">
+                                                                <div id="channel-card-reels" className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400">
@@ -2654,13 +2914,17 @@ export default function DashboardPage() {
                                                                         </div>
                                                                         <button
                                                                             type="button"
-                                                                            onClick={() => copyToClipboard(parsedBundle.reels, 'reels_post')}
-                                                                            className="px-3 py-1 rounded-lg text-xs font-semibold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition flex items-center gap-1 cursor-pointer"
+                                                                            onClick={() => copyToClipboard(parsedBundle.reels, 'reels_post', 'Copied video script to clipboard!')}
+                                                                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer ${
+                                                                                copiedSection === 'reels_post'
+                                                                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                                                    : 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30'
+                                                                            }`}
                                                                         >
                                                                             {copiedSection === 'reels_post' ? (
                                                                                 <>
                                                                                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                    <span className="text-emerald-400">Script Copied!</span>
+                                                                                    <span className="text-emerald-400">✓ Copied!</span>
                                                                                 </>
                                                                             ) : (
                                                                                 <>
@@ -2681,7 +2945,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION: Community Announcement (Discord / Slack) */}
                                                             {(copyFilter === 'all' || copyFilter === 'community') && parsedBundle?.community && (
-                                                                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition">
+                                                                <div id="channel-card-community" className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
@@ -2699,13 +2963,17 @@ export default function DashboardPage() {
                                                                         </div>
                                                                         <button
                                                                             type="button"
-                                                                            onClick={() => copyToClipboard(parsedBundle.community, 'community_post')}
-                                                                            className="px-3 py-1 rounded-lg text-xs font-semibold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 transition flex items-center gap-1 cursor-pointer"
+                                                                            onClick={() => copyToClipboard(parsedBundle.community, 'community_post', 'Copied Discord/Slack announcement to clipboard!')}
+                                                                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer ${
+                                                                                copiedSection === 'community_post'
+                                                                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                                                    : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30'
+                                                                            }`}
                                                                         >
                                                                             {copiedSection === 'community_post' ? (
                                                                                 <>
                                                                                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                    <span className="text-emerald-400">Copied!</span>
+                                                                                    <span className="text-emerald-400">✓ Copied!</span>
                                                                                 </>
                                                                             ) : (
                                                                                 <>
@@ -2726,7 +2994,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION 4: B2B Cold Email */}
                                                             {(copyFilter === 'all' || copyFilter === 'email') && parsedBundle?.email && (
-                                                                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition">
+                                                                <div id="channel-card-email" className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
@@ -2746,14 +3014,18 @@ export default function DashboardPage() {
                                                                             type="button"
                                                                             onClick={() => {
                                                                                 const emailFull = `Subject: ${parsedBundle.email.subject}\n\n${parsedBundle.email.body}`;
-                                                                                copyToClipboard(emailFull, 'full_email');
+                                                                                copyToClipboard(emailFull, 'full_email', 'Copied outbound email sequence to clipboard!');
                                                                             }}
-                                                                            className="px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1 cursor-pointer"
+                                                                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer ${
+                                                                                copiedSection === 'full_email'
+                                                                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                                                    : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30'
+                                                                            }`}
                                                                         >
                                                                             {copiedSection === 'full_email' ? (
                                                                                 <>
                                                                                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                    <span className="text-emerald-400">Email Copied!</span>
+                                                                                    <span className="text-emerald-400">✓ Copied!</span>
                                                                                 </>
                                                                             ) : (
                                                                                 <>
@@ -2773,10 +3045,14 @@ export default function DashboardPage() {
                                                                                 </div>
                                                                                 <button
                                                                                     type="button"
-                                                                                    onClick={() => copyToClipboard(parsedBundle.email.subject, 'email_subj')}
-                                                                                    className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer whitespace-nowrap"
+                                                                                    onClick={() => copyToClipboard(parsedBundle.email.subject, 'email_subj', 'Copied subject line to clipboard!')}
+                                                                                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer whitespace-nowrap ${
+                                                                                        copiedSection === 'email_subj'
+                                                                                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                                                                            : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                                                                                    }`}
                                                                                 >
-                                                                                    {copiedSection === 'email_subj' ? 'Copied' : 'Copy Subject'}
+                                                                                    {copiedSection === 'email_subj' ? '✓ Copied!' : 'Copy Subject'}
                                                                                 </button>
                                                                             </div>
                                                                         )}
@@ -2789,7 +3065,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION 5: Meta / Facebook Ad Variant */}
                                                             {(copyFilter === 'all' || copyFilter === 'meta') && parsedBundle?.meta && (
-                                                                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition">
+                                                                <div id="channel-card-meta" className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
@@ -2809,14 +3085,18 @@ export default function DashboardPage() {
                                                                             type="button"
                                                                             onClick={() => {
                                                                                 const adFull = `Primary Text:\n${parsedBundle.meta.primary}\n\nHeadline:\n${parsedBundle.meta.headline}\n\nDescription:\n${parsedBundle.meta.description}`;
-                                                                                copyToClipboard(adFull, 'full_meta');
+                                                                                copyToClipboard(adFull, 'full_meta', 'Copied Meta ad creative bundle to clipboard!');
                                                                             }}
-                                                                            className="px-3 py-1 rounded-lg text-xs font-semibold bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 transition flex items-center gap-1 cursor-pointer"
+                                                                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer ${
+                                                                                copiedSection === 'full_meta'
+                                                                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                                                    : 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30'
+                                                                            }`}
                                                                         >
                                                                             {copiedSection === 'full_meta' ? (
                                                                                 <>
                                                                                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                    <span className="text-emerald-400">Ad Copied!</span>
+                                                                                    <span className="text-emerald-400">✓ Copied!</span>
                                                                                 </>
                                                                             ) : (
                                                                                 <>
@@ -2833,10 +3113,14 @@ export default function DashboardPage() {
                                                                                 <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Primary Text</span>
                                                                                 <button
                                                                                     type="button"
-                                                                                    onClick={() => copyToClipboard(parsedBundle.meta.primary, 'ad_primary')}
-                                                                                    className="text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                                                                                    onClick={() => copyToClipboard(parsedBundle.meta.primary, 'ad_primary', 'Copied ad primary text to clipboard!')}
+                                                                                    className={`text-[10px] transition cursor-pointer font-medium ${
+                                                                                        copiedSection === 'ad_primary'
+                                                                                            ? 'text-emerald-400'
+                                                                                            : 'text-slate-400 hover:text-slate-200'
+                                                                                    }`}
                                                                                 >
-                                                                                    {copiedSection === 'ad_primary' ? 'Copied' : 'Copy'}
+                                                                                    {copiedSection === 'ad_primary' ? '✓ Copied!' : 'Copy'}
                                                                                 </button>
                                                                             </div>
                                                                             <p className="text-xs text-slate-200 leading-relaxed font-sans font-medium">
@@ -2848,10 +3132,14 @@ export default function DashboardPage() {
                                                                                 <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Headline</span>
                                                                                 <button
                                                                                     type="button"
-                                                                                    onClick={() => copyToClipboard(parsedBundle.meta.headline, 'ad_headline')}
-                                                                                    className="text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                                                                                    onClick={() => copyToClipboard(parsedBundle.meta.headline, 'ad_headline', 'Copied ad headline to clipboard!')}
+                                                                                    className={`text-[10px] transition cursor-pointer font-medium ${
+                                                                                        copiedSection === 'ad_headline'
+                                                                                            ? 'text-emerald-400'
+                                                                                            : 'text-slate-400 hover:text-slate-200'
+                                                                                    }`}
                                                                                 >
-                                                                                    {copiedSection === 'ad_headline' ? 'Copied' : 'Copy'}
+                                                                                    {copiedSection === 'ad_headline' ? '✓ Copied!' : 'Copy'}
                                                                                 </button>
                                                                             </div>
                                                                             <p className="text-xs text-white font-bold">
@@ -2863,10 +3151,14 @@ export default function DashboardPage() {
                                                                                 <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Description</span>
                                                                                 <button
                                                                                     type="button"
-                                                                                    onClick={() => copyToClipboard(parsedBundle.meta.description, 'ad_desc')}
-                                                                                    className="text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                                                                                    onClick={() => copyToClipboard(parsedBundle.meta.description, 'ad_desc', 'Copied ad description to clipboard!')}
+                                                                                    className={`text-[10px] transition cursor-pointer font-medium ${
+                                                                                        copiedSection === 'ad_desc'
+                                                                                            ? 'text-emerald-400'
+                                                                                            : 'text-slate-400 hover:text-slate-200'
+                                                                                    }`}
                                                                                 >
-                                                                                    {copiedSection === 'ad_desc' ? 'Copied' : 'Copy'}
+                                                                                    {copiedSection === 'ad_desc' ? '✓ Copied!' : 'Copy'}
                                                                                 </button>
                                                                             </div>
                                                                             <p className="text-xs text-slate-300">
@@ -2879,7 +3171,7 @@ export default function DashboardPage() {
 
                                                             {/* SECTION 6: Multimodal Visual Prompt */}
                                                             {(copyFilter === 'all' || copyFilter === 'visual') && parsedBundle?.visualPrompt && (
-                                                                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition">
+                                                                <div id="channel-card-visual" className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm hover:border-slate-700/80 transition scroll-mt-4">
                                                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
                                                                         <div className="flex items-center gap-2">
                                                                             <div className="p-1.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-400">
@@ -2906,13 +3198,17 @@ export default function DashboardPage() {
                                                                             </button>
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={() => copyToClipboard(parsedBundle.visualPrompt, 'visual_prompt')}
-                                                                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/30 transition flex items-center gap-1 cursor-pointer"
+                                                                                onClick={() => copyToClipboard(parsedBundle.visualPrompt, 'visual_prompt', 'Copied visual generation prompt to clipboard!')}
+                                                                                className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer ${
+                                                                                    copiedSection === 'visual_prompt'
+                                                                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                                                        : 'bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/30'
+                                                                                }`}
                                                                             >
                                                                                 {copiedSection === 'visual_prompt' ? (
                                                                                     <>
                                                                                         <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                                                                        <span className="text-emerald-400">Prompt Copied!</span>
+                                                                                        <span className="text-emerald-400">✓ Copied!</span>
                                                                                     </>
                                                                                 ) : (
                                                                                     <>
@@ -2952,26 +3248,29 @@ export default function DashboardPage() {
                                     {/* TAB 2: Multimodal Visual Creatives */}
                                     {activeOutputTab === 'visuals' && (
                                         <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                                 <div>
                                                     <h3 className="text-xs font-bold text-white">Multimodal Campaign Visual</h3>
                                                     <p className="text-[10px] text-slate-400">Generated by Image Generation Agent from your campaign directive.</p>
                                                 </div>
                                                 {generatedImageUrl && (
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full flex items-center gap-1.5">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                                            AI Visual Ready
+                                                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+                                                        <span
+                                                            className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full flex items-center gap-1.5 shrink-0 max-w-xs truncate"
+                                                            title={imageModelUsed ? `Model: ${imageModelUsed}` : 'AI Visual Ready'}
+                                                        >
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                                                            <span className="shrink-0 font-medium">AI Visual Ready</span>
                                                             {imageModelUsed && (
-                                                                <span className="ml-1 text-slate-400 font-sans">
-                                                                    · {imageModelUsed.replace('huggingface/', '').replace('black-forest-labs/', '')}
+                                                                <span className="ml-1 text-slate-300 font-sans truncate">
+                                                                    · {formatImageModelLabel(imageModelUsed)}
                                                                 </span>
                                                             )}
                                                         </span>
                                                         {clarityScore && (
-                                                            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
-                                                                <CheckCircle2 className="w-3 h-3 text-cyan-400" />
-                                                                Clarity: {clarityScore} (Verified)
+                                                            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm shrink-0">
+                                                                <CheckCircle2 className="w-3 h-3 text-cyan-400 shrink-0" />
+                                                                <span>Clarity: {clarityScore} (Verified)</span>
                                                             </span>
                                                         )}
                                                     </div>
@@ -2987,9 +3286,14 @@ export default function DashboardPage() {
                                                             className="w-full h-80 object-cover"
                                                         />
                                                         <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent opacity-80" />
-                                                        <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                                                            <div>
-                                                                <p className="text-sm font-bold text-white drop-shadow">{campaignGoal.slice(0, 50) || 'Autonomous Marketing Visual'}</p>
+                                                        <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between gap-4">
+                                                            <div className="min-w-0 flex-1 mr-2">
+                                                                <h3
+                                                                    className="text-lg font-bold text-white truncate max-w-[65%] sm:max-w-[75%]"
+                                                                    title={campaignTitle}
+                                                                >
+                                                                    {campaignTitle}
+                                                                </h3>
                                                                 <p className="text-[10px] text-slate-300 drop-shadow mt-0.5">1024 x 1024 • High Resolution Marketing Asset</p>
                                                             </div>
                                                             <a
@@ -2997,7 +3301,7 @@ export default function DashboardPage() {
                                                                 target="_blank"
                                                                 rel="noreferrer"
                                                                 download="campaign_visual.png"
-                                                                className="bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 transition cursor-pointer backdrop-blur"
+                                                                className="bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 transition cursor-pointer backdrop-blur shrink-0"
                                                             >
                                                                 <Download className="w-3.5 h-3.5" />
                                                                 <span>Download Full PNG</span>
@@ -3636,6 +3940,23 @@ export default function DashboardPage() {
                                 </div>
                             </motion.div>
                         </div>
+                    )}
+                </AnimatePresence>
+                {/* ── Lightweight Floating Toast Notification ────────────── */}
+                <AnimatePresence>
+                    {toastNotification && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 16, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 16, scale: 0.95 }}
+                            transition={{ duration: 0.18, ease: 'easeOut' }}
+                            className="fixed bottom-6 right-4 sm:right-6 z-50 flex items-center gap-3 px-4 py-3 bg-slate-900/95 border border-emerald-500/40 text-emerald-300 rounded-2xl shadow-2xl backdrop-blur-xl text-xs font-semibold ring-1 ring-emerald-500/20"
+                        >
+                            <div className="p-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0">
+                                <Check className="w-4 h-4 text-emerald-400" />
+                            </div>
+                            <span>{toastNotification}</span>
+                        </motion.div>
                     )}
                 </AnimatePresence>
             </div>

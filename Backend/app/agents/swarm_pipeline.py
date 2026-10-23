@@ -2,10 +2,10 @@
 AgenticMarketer Backend — 6-Agent Swarm Orchestration Pipeline.
 Autonomous sequential workflow:
 1. Ingestion Agent (RAG Context Querying & Brand Guidelines Extraction)
-2. Market Research Agent (DuckDuckGo Search & Trend Extraction)
+2. Market Research Agent (Live SERP Intelligence & Real-Time Trend Extraction)
 3. Copywriter & Visual Agent (Groq Cloud LPU Multi-Channel Copy & Visual Prompts)
 3.5. Brand Visual Prompt Agent (Groq LPU analyzes brand guidelines → precision image prompt)
-3.6. Image Generation Agent (Pollinations Flux + Pillow Brand Compositor guaranteed delivery)
+3.6. Image Generation Agent (Cloudflare Workers AI FLUX.1 Primary → Eden AI → Pollinations FLUX → Pillow Compositor fallback chain)
 4. SEO & Analytics Agent (Textstat Readability & LSI Keyword Auditing)
 5. Social Publisher Agent (Channel Manifest Formatting & Omnichannel Payloads)
 """
@@ -29,16 +29,6 @@ from backend.app.core.config import get_settings
 from backend.app.rag.vector_store import rag_store
 
 
-def _safe_hf_text_to_image(hf_client: Any, **call_kwargs: Any) -> Any:
-    """Safely invokes huggingface_hub InferenceClient text_to_image, catching StopIteration and other exceptions to prevent generator future leaks."""
-    try:
-        return hf_client.text_to_image(**call_kwargs)
-    except StopIteration as si:
-        raise RuntimeError(f"HF text_to_image stream ended: {si}") from si
-    except Exception as exc:
-        raise exc
-
-
 class SwarmPipeline:
     """Coordinates the 5 specialized AI agents with real-time SSE progress streaming."""
 
@@ -50,6 +40,11 @@ class SwarmPipeline:
         self.content_type = str(directives.get("content_type", "social_bundle")).strip().lower()
         self.channels = directives.get("channels", ["linkedin", "x", "meta", "email"])
         self.attached_files = directives.get("files", [])
+        self.brand_playbook = str(directives.get("brand_playbook", "auto")).strip()
+        self.brief_content = str(directives.get("brief_content", "") or "").strip()
+        if not self.goal and self.brief_content:
+            first_lines = [l.strip() for l in self.brief_content.splitlines() if l.strip() and not l.strip().startswith("=")]
+            self.goal = first_lines[0][:120] if first_lines else "Launch campaign grounded in attached brief"
         self.settings = get_settings()
 
     def _timestamp(self) -> str:
@@ -168,42 +163,91 @@ class SwarmPipeline:
 
     # ── Agent 1: Ingestion Agent ─────────────────────────────────────
     async def run_ingestion_agent(self) -> Dict[str, Any]:
-        """Queries RAG vector store for grounded brand context, attached files, and visual guidelines."""
-        # 1. Query top semantic chunks matching campaign goal
-        chunks = rag_store.query_context(self.goal, top_k=4)
+        """Queries RAG vector store with anti-hallucination disambiguation, explicit playbook selection, and multimodal brief grounding."""
+        all_chunks = []
+        winning_doc = None
+        playbook_mode = self.brand_playbook.lower() if self.brand_playbook else "auto"
 
-        # 2. Query brand visual identity, colors, and product architecture if available
-        brand_chunks = rag_store.query_context(f"{self.goal} brand guidelines visual identity colors product architecture", top_k=2)
-        all_chunks = list(chunks)
-        seen_texts = {c.get("text", "")[:60] for c in all_chunks}
-        for bc in brand_chunks:
-            if bc.get("text", "")[:60] not in seen_texts:
-                all_chunks.append(bc)
-                seen_texts.add(bc.get("text", "")[:60])
-
-        # 3. If specific files are attached, prioritize chunks from those files
-        if self.attached_files:
-            file_names = {Path(f).name.lower() for f in self.attached_files}
-            all_stored_chunks = rag_store._load_chunks()
-            for c in all_stored_chunks:
-                c_name = str(c.get("doc_name", "")).lower()
-                if any(fn in c_name for fn in file_names) and c.get("text", "")[:60] not in seen_texts:
-                    all_chunks.append(c)
-                    seen_texts.add(c.get("text", "")[:60])
-                    if len(all_chunks) >= 8:
-                        break
-
-        if all_chunks:
-            grounding_text = "\n\n".join(
-                [f"[{c.get('doc_name', 'Doc')} (Chunk {c.get('chunk_index', 0)})]: {c.get('text', '')}" for c in all_chunks]
-            )
-            grounding_summary = f"Retrieved {len(all_chunks)} grounded brand passages across attached files and active vector collections."
-        else:
+        # Case A: User explicitly chose "None" (New Unaffiliated Brand) -> Zero corporate vector grounding
+        if playbook_mode in ["none", "null", "false", "off"]:
             grounding_text = (
-                f"Default Brand Directive: Maintain {self.tone.lower()} positioning. "
-                f"Value proposition focused on autonomous marketing intelligence and high conversion."
+                f"Autonomous Brand Directive: Clean, independent positioning for '{self.goal}'. "
+                f"Tone: {self.tone.lower()}. Target Audience: {self.audience}. Operating with zero cross-brand contamination."
             )
-            grounding_summary = "No pre-indexed documents matched directly; initialized baseline brand persona and tone profile."
+            grounding_summary = f"Brand Playbook set to 'None'. Operating with 100% clean, uncontaminated brand assets."
+
+        # Case B: User explicitly chose a specific indexed brand playbook (e.g. MotorolaStyleGuide.pdf or Apple_guidelines.pdf)
+        elif playbook_mode != "auto":
+            target_doc = Path(self.brand_playbook).name.lower()
+            winning_doc = self.brand_playbook
+            raw_chunks = rag_store.query_context(self.goal or "brand visual guidelines style and identity", top_k=5, min_score=0.10, doc_filter=[target_doc])
+            all_chunks = raw_chunks[:4]
+            if all_chunks:
+                grounding_text = "\n\n".join(
+                    [f"[{c.get('doc_name', 'Doc')} (Chunk {c.get('chunk_index', 0)})]: {c.get('text', '')}" for c in all_chunks]
+                )
+                grounding_summary = f"Injected explicit brand playbook '{winning_doc}' ({len(all_chunks)} verified passages)."
+            else:
+                grounding_text = f"Selected playbook '{winning_doc}' active. Applying brand principles for '{self.goal}'."
+                grounding_summary = f"Selected playbook '{winning_doc}' attached."
+
+        # Case C: Auto-detect from library with anti-hallucination disambiguation
+        else:
+            stop_words = {
+                "launch", "promote", "create", "build", "scale", "drive", "manage", 
+                "optimize", "slash", "boost", "bills", "featuring", "with", "from", 
+                "named", "brand", "guidelines", "visual", "identity", "colors", 
+                "product", "architecture", "new", "for", "and", "the", "a", "an", "our", "your"
+            }
+            goal_entities = set(re.findall(r"\b[a-zA-Z]{3,}\b", self.goal.lower())) - stop_words
+
+            active_file_filter = None
+            if self.attached_files:
+                active_file_filter = [Path(f).name.lower() for f in self.attached_files if f]
+
+            # 1. Query top semantic chunks matching campaign goal
+            raw_chunks = rag_store.query_context(self.goal, top_k=6, min_score=0.25, doc_filter=active_file_filter)
+
+            # 2. Score threshold & entity relevance check (Anti-Hallucination Gate)
+            verified_chunks = []
+            for c in raw_chunks:
+                score = c.get("score", 0)
+                chunk_words = set(re.findall(r"\b[a-zA-Z]{3,}\b", c.get("text", "").lower()))
+                overlap = goal_entities.intersection(chunk_words)
+                doc_brand = [b for b in re.sub(r"[^a-zA-Z]", " ", c.get("doc_name", "")).lower().split() if len(b) >= 4 and b not in {"guide", "style", "guidelines", "brand"}]
+                brand_match = any(b in self.goal.lower() for b in doc_brand)
+                # Strict Gate: Must match explicit entity/subject OR mention the document's brand name
+                if overlap or brand_match:
+                    verified_chunks.append((c, len(overlap) + (3 if brand_match else 0)))
+                elif not goal_entities and score >= 0.45:
+                    verified_chunks.append((c, 0))
+
+            # 3. Cross-Document Disambiguation (Winner-Takes-All Brand Isolation)
+            if verified_chunks:
+                doc_scores = {}
+                for c, _ in verified_chunks:
+                    doc = c.get("doc_name", "Unknown")
+                    doc_scores[doc] = doc_scores.get(doc, 0) + c.get("score", 0)
+                winning_doc = max(doc_scores, key=doc_scores.get)
+                all_chunks = [c for c, _ in verified_chunks if c.get("doc_name") == winning_doc][:4]
+
+            if all_chunks and winning_doc:
+                grounding_text = "\n\n".join(
+                    [f"[{c.get('doc_name', 'Doc')} (Chunk {c.get('chunk_index', 0)})]: {c.get('text', '')}" for c in all_chunks]
+                )
+                grounding_summary = f"Auto-detected & verified {len(all_chunks)} brand passages from '{winning_doc}'. Discarded unrelated index files to prevent hallucination."
+            else:
+                grounding_text = (
+                    f"Default Brand Directive: Autonomous positioning for '{self.goal}'. "
+                    f"Tone: {self.tone.lower()}. Value proposition focused on product excellence with zero cross-brand contamination."
+                )
+                grounding_summary = f"No indexed documents match '{self.goal}'. Proceeding with clean, uncontaminated brand assets."
+
+        # If user attached a multimodal campaign brief (image, pdf, or doc), inject it with top priority
+        if self.brief_content:
+            brief_intro = "=== USER-ATTACHED MULTIMODAL CAMPAIGN BRIEF & VISUAL SPECIFICATION ===\n"
+            grounding_text = f"{brief_intro}{self.brief_content}\n\n=== BRAND & EDITORIAL DIRECTIVES ===\n{grounding_text}"
+            grounding_summary = f"Multimodal Brief Injected. {grounding_summary}"
 
         return {
             "agent": "Ingestion Agent",
@@ -231,68 +275,104 @@ class SwarmPipeline:
         ).strip(" ,.-&")
         return truncated or text[:max_chars]
 
+    # ── Live Search & Real-Time Knowledge Retrieval Helpers ──────────
+    async def _fetch_live_market_news(self, query: str, max_results: int = 4) -> List[Dict[str, str]]:
+        """Fetches live real-time market news and industry shifts via Google News RSS without blocking or timeouts."""
+        results = []
+        try:
+            import httpx, xml.etree.ElementTree as ET, urllib.parse, re
+            encoded_q = urllib.parse.quote(query.strip())
+            url = f"https://news.google.com/rss/search?q={encoded_q}&hl=en-US&gl=US&ceid=US:en"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                res = await client.get(url, headers=headers)
+                if res.status_code == 200:
+                    root = ET.fromstring(res.content)
+                    for item in root.findall(".//item")[:max_results]:
+                        title = item.find("title").text if item.find("title") is not None else ""
+                        desc = item.find("description").text if item.find("description") is not None else ""
+                        link = item.find("link").text if item.find("link") is not None else ""
+                        pub_date = item.find("pubDate").text if item.find("pubDate") is not None else ""
+                        clean_desc = re.sub(r"<[^>]+>", "", desc).strip()
+                        if title or clean_desc:
+                            results.append({
+                                "title": title.strip(),
+                                "snippet": (clean_desc or title).strip()[:300],
+                                "date": pub_date.strip(),
+                                "link": link.strip(),
+                            })
+        except Exception as e:
+            print(f"[Swarm Live News] Notice: {e}")
+        return results
+
+    async def _fetch_wiki_knowledge(self, query: str, max_results: int = 3) -> List[Dict[str, str]]:
+        """Queries authoritative encyclopedia knowledge and brand design history via Wikipedia API."""
+        results = []
+        try:
+            import httpx, urllib.parse, re
+            url = "https://en.wikipedia.org/w/api.php"
+            params = {
+                "action": "query",
+                "list": "search",
+                "srsearch": query.strip(),
+                "format": "json",
+                "srlimit": max_results,
+            }
+            headers = {"User-Agent": "AgenticMarketer/1.0"}
+            async with httpx.AsyncClient(timeout=3.5) as client:
+                res = await client.get(url, params=params, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    for item in data.get("query", {}).get("search", []):
+                        snippet = re.sub(r"<[^>]+>", "", item.get("snippet", "")).strip()
+                        title = item.get("title", "").strip()
+                        if title:
+                            results.append({
+                                "title": title,
+                                "snippet": snippet[:300],
+                                "link": f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title)}",
+                            })
+        except Exception as e:
+            print(f"[Swarm Wiki Knowledge] Notice: {e}")
+        return results
+
     # ── Agent 2: Market Research Agent ───────────────────────────────
     async def run_research_agent(self) -> Dict[str, Any]:
         """Conducts live market intelligence search (news + SERP reports), LSI terms extraction, and SEO Content Brief generation."""
         clean_g_search = self._clean_phrase(self.goal, 45)
         clean_a_search = self._clean_phrase(self.audience, 30)
-        search_results = []
-        news_results = []
 
-        try:
-            try:
-                from ddgs import DDGS
-            except ImportError:
-                from duckduckgo_search import DDGS
+        # Extract core domain keywords for resilient search cascading
+        words = re.findall(r"\b[a-zA-Z]{3,}\b", self.goal)
+        non_hype = [
+            w for w in words
+            if w.lower() not in {"launch", "promote", "create", "build", "scale", "drive", "manage", "optimize", "slash", "boost", "bills", "featuring", "with", "from"}
+        ]
+        topic_keywords = " ".join(non_hype[1:5]) if len(non_hype) > 2 else " ".join(non_hype[:4])
 
-            def _fetch_live_intel():
-                n_items = []
-                t_items = []
-                with DDGS() as ddgs:
-                    # 1. Fetch live 2026 industry news
-                    try:
-                        n_items = list(ddgs.news(f"{clean_g_search} 2026", max_results=4))
-                    except Exception:
-                        try:
-                            n_items = list(ddgs.news(f"{clean_g_search} news", max_results=3))
-                        except Exception:
-                            n_items = []
+        # 1. Fetch live market news and authoritative reference signals concurrently
+        news_results, search_results = await asyncio.gather(
+            self._fetch_live_market_news(f"{clean_g_search} 2026", max_results=4),
+            self._fetch_wiki_knowledge(clean_g_search, max_results=4),
+        )
 
-                    # 2. Fetch authoritative market trends and benchmark reports
-                    try:
-                        t_items = list(ddgs.text(f"{clean_g_search} trends {clean_a_search} 2026", max_results=4))
-                    except Exception:
-                        try:
-                            t_items = list(ddgs.text(f"{clean_g_search} market trends", max_results=4))
-                        except Exception:
-                            t_items = []
-                return n_items, t_items
+        # Cascading fallback 1: If custom brand was unknown, search industry topic
+        if not news_results and topic_keywords:
+            news_results = await self._fetch_live_market_news(f"{topic_keywords} 2026", max_results=4)
 
-            n_res, t_res = await asyncio.wait_for(asyncio.to_thread(_fetch_live_intel), timeout=7.0)
-            
-            for item in n_res:
-                if item.get("title") or item.get("body"):
-                    news_results.append({
-                        "title": item.get("title", "").strip(),
-                        "snippet": item.get("body", "").strip(),
-                        "date": item.get("date", "2026"),
-                        "link": item.get("url", item.get("href", "")),
-                    })
-            
-            for item in t_res:
-                if item.get("title") or item.get("body"):
-                    search_results.append({
-                        "title": item.get("title", "").strip(),
-                        "snippet": item.get("body", "").strip(),
-                        "link": item.get("href", ""),
-                    })
-        except Exception as ddg_err:
-            print(f"[Research Agent] Web search notice ({ddg_err}). Engaging dynamic intelligence fallback...")
+        # Cascading fallback 2: If still empty, search audience industry trends
+        if not news_results and clean_a_search:
+            news_results = await self._fetch_live_market_news(f"{clean_a_search} trends 2026", max_results=4)
 
-        # If live search returned minimal signals, enrich with Groq market research synthesis
+        # Cascading fallback for Wikipedia if custom brand yielded zero
+        if not search_results and topic_keywords:
+            search_results = await self._fetch_wiki_knowledge(topic_keywords, max_results=4)
+        if not search_results and clean_a_search:
+            search_results = await self._fetch_wiki_knowledge(clean_a_search, max_results=3)
+
+        # 2. Enrich with Groq market research synthesis for quantitative 2026 benchmarks
         groq_market_intel = ""
-        if len(news_results) + len(search_results) < 3:
-            groq_prompt = f"""You are a Principal Market Intelligence Analyst at a top-tier strategy firm.
+        groq_prompt = f"""You are a Principal Market Intelligence Analyst at a top-tier strategy firm.
 Analyze the following marketing initiative and target audience for 2026:
 CAMPAIGN GOAL: {self.goal}
 TARGET AUDIENCE: {self.audience}
@@ -303,7 +383,7 @@ Provide 3 concrete, verified 2026 market developments:
 3. Acute Buyer Pain Points & Emerging Objections (Why legacy solutions fail in 2026)
 
 Format as concise, high-impact bullet points with concrete metrics and zero generic filler."""
-            groq_market_intel = await self._generate_content_via_groq(groq_prompt, timeout_sec=8.0) or ""
+        groq_market_intel = await self._generate_content_via_groq(groq_prompt, timeout_sec=8.0) or ""
 
         # Build comprehensive research context
         intel_sections = []
@@ -328,9 +408,15 @@ Format as concise, high-impact bullet points with concrete metrics and zero gene
         research_context = "\n".join(intel_sections)
 
         # Extract subheadings, questions (PAA), intent, and LSI terms
-        all_text = " ".join([r.get("title", "") + " " + r.get("snippet", "") for r in (news_results + search_results)])
+        import html
+        all_text = html.unescape(" ".join([r.get("title", "") + " " + r.get("snippet", "") for r in (news_results + search_results)]))
         words = re.findall(r"\b[a-zA-Z]{4,}\b", all_text.lower())
-        stop = {"with", "that", "this", "from", "your", "have", "more", "will", "what", "when", "their", "there", "about", "which", "would", "these", "other", "into", "first", "could", "after", "should", "where", "guide", "best", "top", "news", "report"}
+        stop = {
+            "with", "that", "this", "from", "your", "have", "more", "will", "what", "when",
+            "their", "there", "about", "which", "would", "these", "other", "into", "first",
+            "could", "after", "should", "where", "guide", "best", "top", "news", "report",
+            "nbsp", "quot", "amp", "http", "https", "href", "html", "article", "read"
+        }
         freq = {}
         for w in words:
             if w not in stop:
@@ -459,10 +545,10 @@ Produce a complete marketing bundle structured with these EXACT markdown heading
 - **Scene & Subject**: [Specific personas (1-3 people max) or hero product staging, authentic engagement, natural body language, purposeful momentum.]
 - **Environment & Architecture**: [Tactile architectural setting, e.g. sunlit glass-partitioned corporate loft, industrial innovation lab, artisan studio, concrete & warm walnut accents.]
 - **Lighting & Atmosphere**: [Cinematic directional key light, warm amber rim lighting, soft diffuse shadows, volumetric daylight, 5200K daylight-balanced tone.]
-- **Camera & Optical Specs**: [Shot on Hasselblad H6D-100c medium format, 85mm f/1.4 prime lens, shallow depth of field, subtle Kodak Portra 400 film grain, crisp tactile micro-textures, 8k resolution.]
+- **Camera & Optical Specs**: [Shot on Sony A7R V or Hasselblad X2D, 50mm lens at f/4 to f/5.6 for sharp subject focus, edge-to-edge clarity, authentic material physics, natural color balance.]
 - **Color Palette & Brand Aesthetics**: [Curated 3-tone color harmony aligned with the brand, e.g. deep obsidian slate (#0F172A), brushed titanium, warm honey amber.]
 - **Aspect Ratio**: 16:9 (Landscape for LinkedIn & Web) / 1:1 (Square for Feed Ads) / 9:16 (Stories/Reels)
-- **Negative Prompt Guardrails**: No uncanny plastic skin, no distorted fingers or hands, no floating sci-fi holograms, no glowing wireframes, no cluttered composition, no stiff corporate stock smiles.)
+- **Negative Prompt Guardrails**: No text, no words in quotes, no floating typography, no uncanny plastic skin, no distorted fingers or hands, no floating sci-fi holograms, no glowing wireframes, no blurred out-of-focus subjects.)
 
 Format your response clearly using the specified markdown headings.
 """
@@ -611,10 +697,10 @@ Check out the full campaign breakdown and copy assets in the channel files!
 **Hero Visual Directive**: {visual_concept}
 - **Scene & Subject**: Purposeful, authentic professional engagement tailored directly to {clean_aud}, featuring tactile textures and natural workplace momentum.
 - **Lighting & Atmosphere**: Warm directional key light, soft volumetric daylight, cinematic rim lighting, 5200K balanced color temperature.
-- **Camera & Optical Specs**: Photographed on Hasselblad H6D-100c medium format, 85mm f/1.4 prime lens, shallow depth of field, Kodak Portra 400 tonal science, crisp 8k texture clarity.
+- **Camera & Optical Specs**: Photographed on Sony A7R V or Hasselblad X2D, 50mm lens at f/4 for sharp subject focus, edge-to-edge clarity, and authentic material physics.
 - **Color Palette & Brand Aesthetics**: Commercial studio palette tailored to {clean_goal[:30]}, featuring deep obsidian slate, brushed titanium, and warm amber accents.
 - **Aspect Ratio**: 16:9 (Landscape for LinkedIn & Web) / 1:1 (Square for Feed Ads) / 9:16 (Stories/Reels)
-- **Negative Prompt Guardrails**: No uncanny CGI, plastic skin, distorted hands, floating sci-fi holograms, glowing wireframes, or stiff stock smiles.
+- **Negative Prompt Guardrails**: No text, no words in quotes, no floating typography, no uncanny CGI, plastic skin, distorted hands, floating sci-fi holograms, or blurry out-of-focus subjects.
 """
 
         # Extract visual prompt details
@@ -951,57 +1037,67 @@ Check out the full campaign breakdown and copy assets in the channel files!
         cleaned_hint = self._clean_and_normalize_prompt(copywriter_visual_prompt)
         clean_subject = self._clean_phrase(self.goal, 45)
 
-        # 1. BRAND & INDUSTRY WEB SEARCH GROUNDING (2-Second Timeout Fallback)
+        # 1. BRAND & INDUSTRY WEB SEARCH GROUNDING
         brand_search_context = ""
         try:
-            try:
-                from ddgs import DDGS
-            except ImportError:
-                from duckduckgo_search import DDGS
-
-            search_query = f"{clean_subject} visual brand identity color palette interface design style"
-
-            def _fetch_brand_search():
-                with DDGS() as ddgs:
-                    return list(ddgs.text(search_query, max_results=2))
-
-            b_results = await asyncio.wait_for(asyncio.to_thread(_fetch_brand_search), timeout=2.0)
-            if b_results:
-                brand_snippets = [r.get("body", "")[:180] for r in b_results if r.get("body")]
-                brand_search_context = " ".join(brand_snippets[:2])
+            brand_query = f"{clean_subject} visual brand design identity"
+            w_items, n_items = await asyncio.gather(
+                self._fetch_wiki_knowledge(brand_query, max_results=2),
+                self._fetch_live_market_news(f"{clean_subject} design style", max_results=2),
+            )
+            # If custom brand yielded no wiki results, query industry topic
+            if not w_items:
+                words = [w for w in re.findall(r"\b[a-zA-Z]{3,}\b", self.goal) if w.lower() not in {"launch", "promote", "create", "build", "scale", "slash", "boost"}]
+                if len(words) > 1:
+                    topic = " ".join(words[1:3])
+                    w_items = await self._fetch_wiki_knowledge(f"{topic} design aesthetic", max_results=2)
+            snippets = [w["snippet"] for w in w_items if w.get("snippet")] + [n["title"] for n in n_items if n.get("title")]
+            if snippets:
+                brand_search_context = " ".join(snippets[:3])
         except Exception as e:
-            print(f"[Creative Director Search] Web search fallback notice: {e}")
+            print(f"[Creative Director Search] Notice: {e}")
 
-        if not brand_search_context:
-            brand_search_context = f"Clean modern brand identity for {clean_subject}, high-conversion interface design."
+        guidelines_section = ""
+        if grounding_context and "=== USER-ATTACHED MULTIMODAL CAMPAIGN BRIEF" in grounding_context:
+            guidelines_section = f"USER-ATTACHED VISUAL BRIEF & PRODUCT SPECIFICATIONS:\n{grounding_context[:1200]}\n"
+        elif grounding_context and "Chunk" in grounding_context:
+            guidelines_section = f"VERIFIED BRAND GUIDELINES & COLOR SPECIFICATIONS:\n{grounding_context[:800]}\n"
+        else:
+            guidelines_section = f"BRAND & INDUSTRY VISUAL IDENTITY:\n{brand_search_context[:800]}\n"
 
         # 2. High-speed Groq LPU visual prompt synthesis
-        brand_prompt_request = f"""You are an Award-Winning Creative Director & Commercial Advertising Photographer creating world-class prompts for photorealistic FLUX.1 and Midjourney campaigns.
+        brand_prompt_request = f"""You are a World-Class Commercial Advertising Photographer and Creative Director creating visual prompts for the FLUX.1 flow-matching AI engine.
 
 CAMPAIGN DIRECTIVE:
 Goal: {self.goal}
 Target Audience: {self.audience}
 Brand Tone: {self.tone}
 
-GROUNDED BRAND GUIDELINES:
-{brand_search_context[:1000]}
+GROUNDED VISUAL GUIDELINES & SPECIFICATIONS:
+{guidelines_section}
 
 OBJECTIVE:
-Craft an evocative, photorealistic, cinematic commercial editorial image generation prompt (between 75 and 100 words) that tells a compelling visual story directly embodying "{self.goal}".
+Craft an evocative, photorealistic commercial advertising prompt (between 60 and 85 words) specifically optimized for FLUX.1 flow-matching architecture that embodies "{self.goal}".
 
-REQUIRED ELEMENTS IN PROMPT:
-1. SPECIFIC SCENE & SUBJECT ACTION: Place 1-2 authentic, professional subjects (or premium product staging) in a meaningful, purposeful action directly relevant to {self.audience} and the campaign goal. Describe genuine body language, tactile engagement with real physical materials, and authentic emotion (no fake cheesy smiles).
-2. TACTILE ENVIRONMENT & ARCHITECTURE: Specify a textured physical setting (e.g. sunlit glass-partitioned corporate loft, industrial innovation lab, minimalist studio with warm walnut and concrete surfaces, panoramic city skyline).
-3. LIGHTING & ATMOSPHERE: Cinematic directional lighting (e.g. natural warm golden-hour daylight pouring through floor-to-ceiling windows, subtle amber rim light, soft fill, 5200K daylight balanced).
-4. CAMERA, OPTICS & COLOR SCIENCE: Hasselblad H6D-100c medium format camera, 85mm f/1.4 prime lens, shallow depth of field with soft creamy bokeh, Kodak Portra 400 color grading, crisp tactile micro-textures, 8k resolution.
-5. OPTIONAL ACCENT: If relevant, 1 short keyword/metric in double quotes (e.g. "GROWTH" or "+28%").
+FLUX.1 PROMPT PRINCIPLES:
+1. CLEAR HERO COMPOSITION:
+   - If promoting a physical product, device, apparel, or packaging: Create a striking commercial hero product showcase. Place the product on an elegant, tactile surface (e.g. brushed slate, dark walnut, textured linen, or minimalist polished stone) with refined studio reflections and clean angles.
+   - If promoting software, services, or lifestyle: Place ONE authentic, professional person in a purposeful, natural action in an architectural, sunlit modern environment (e.g., modern glass-partitioned studio or workspace, reviewing clean analytics on a sleek aluminum laptop).
+2. LIGHTING & AMBIANCE:
+   - Natural directional daylight, warm morning golden-hour rays through floor-to-ceiling windows, soft diffused fill, subtle amber rim highlights, authentic shadow gradients.
+3. OPTICS & SHARP FOCUS:
+   - Shot on Hasselblad X2D or Sony A7R V with 50mm lens at f/4 to f/5.6 for sharp subject focus and edge-to-edge clarity across the frame.
+   - Avoid shallow depth of field or f/1.4 blur (it blurs faces and products).
+4. TACTILE MATERIAL PHYSICS:
+   - Describe real physical textures: brushed titanium, warm wood grain, matte slate, fine fabric weave, natural skin pores with authentic expression.
 
-STRICT GUARDRAILS:
-- STRICTLY FORBIDDEN: floating holograms, glowing glass boards, abstract HUD lines, glowing wireframes, sci-fi elements, dark empty rooms, crowded awkward groups, or plastic mannequin skin.
-- All data/UI MUST be on real physical screens (laptop, monitor, tablet) or physical paper/whiteboard.
+CRITICAL GUARDRAILS (STRICT):
+- ABSOLUTELY NO TEXT, NO WORDS IN QUOTES, NO TYPOGRAPHY REQUESTS (never write "GROWTH", "INNOVATION", or quote marks — FLUX will render bizarre floating letters).
+- NO TOKEN SOUPS (do NOT include "8k", "photorealistic", "hyperrealistic", "masterpiece", "trending on artstation", "crisp details").
+- NO sci-fi holograms, glowing HUD lines, floating charts, plastic skin, or crowded awkward groups.
 
 OUTPUT FORMAT MANDATE:
-Output ONLY the final image prompt string (no markdown headers, no labels like 'Prompt:', no quotes around the whole response, no conversational preambles).
+Output ONLY the clean prompt string in natural descriptive prose. No markdown headers, no 'Prompt:', no quotes around the response, no conversational preambles.
 """
 
         groq_visual_prompt = await self._generate_content_via_groq(brand_prompt_request, timeout_sec=10.0)
@@ -1017,87 +1113,99 @@ Output ONLY the final image prompt string (no markdown headers, no labels like '
         return self._heuristic_brand_prompt(grounding_context, cleaned_hint)
 
     def _heuristic_brand_prompt(self, grounding_context: str, copywriter_hint: str) -> str:
-        """Derives a dynamic, high-fidelity photorealistic prompt categorized across 5 marketing industries with search grounding and text accents."""
+        """Derives a dynamic, high-fidelity prompt for FLUX.1 categorized across 5 marketing industries."""
         g_ctx = (grounding_context or "").strip()
         c_hint = (copywriter_hint or "").strip()
         text = ((self.goal or "") + " " + (self.audience or "") + " " + g_ctx + " " + c_hint).lower()
-        clean_g = self._clean_phrase(self.goal, 45)
-        clean_aud = self._clean_phrase(self.audience, 35)
+        clean_g = self._clean_phrase(self.goal, 55)
+        clean_aud = self._clean_phrase(self.audience, 40)
 
-        # Dynamic accent extraction (1-2 short words or metric)
-        nouns = [w.strip(" ,.-").upper() for w in self.goal.split() if len(w) >= 4 and w.lower() not in {"promote", "launch", "create", "build", "scale", "drive", "manage", "optimize", "enterprise", "platform", "system"}]
-        accent_kw = f'"{nouns[0]}"' if nouns else '"GROWTH"'
+        # 1. PRODUCT / E-COMMERCE / FOOD & BEVERAGE / CONSUMER GOODS / HARDWARE
+        if re.search(r"\b(product|products|ecommerce|e-commerce|shop|store|food|beverage|drink|coffee|restaurant|retail|goods|packaging|bottle|cosmetics|serum|phone|iphone|device|gadget|hardware)\b", text):
+            prompt = f"Commercial studio product photograph for {clean_g}. Premium hero product staging resting on a textured dark slate and warm walnut surface with refined studio reflections. Soft diffused directional softbox lighting, warm amber rim highlights, Sony A7R V with 50mm lens at f/5.6 for sharp edge-to-edge clarity and authentic material physics."
 
-        camera_params = "Natural warm directional daylight, subtle amber rim lighting, Hasselblad H6D-100c medium format, 85mm f/1.4 prime lens, shallow depth of field, Kodak Portra 400 color grading, crisp tactile micro-textures, 8k commercial resolution."
-
-        # 1. PRODUCT / E-COMMERCE / FOOD & BEVERAGE / LOCAL BUSINESS
-        if re.search(r"\b(product|products|ecommerce|e-commerce|shop|store|food|beverage|drink|coffee|restaurant|retail|goods|packaging|bottle|cosmetics|local business)\b", text):
-            prompt = f"Commercial studio product photography for {clean_g}. Premium packaging showcase resting on a textured minimalist stone plinth with subtle botanical accents. Soft diffused directional softbox key light, warm amber rim highlights, high-contrast studio reflections, Hasselblad 85mm f/2.8 macro lens, razor-sharp label typography with {accent_kw}, 8k commercial editorial clarity."
-
-        # 3. REAL ESTATE / SPATIAL
+        # 2. REAL ESTATE / SPATIAL / ARCHITECTURE
         elif re.search(r"\b(real estate|property|architectural|interior|exterior|building|house|apartment|home|construction|decor|space|spatial|residence|condo|villas)\b", text):
-            prompt = f"Architectural Digest commercial interior photography for {clean_g}. Expansive sunlit architectural space featuring floor-to-ceiling panoramic glass, warm walnut surfaces, polished concrete, and modern designer furniture. Warm volumetric golden-hour sunlight casting soft geometric shadows, Phase One medium format 35mm f/2.8 lens, exceptional spatial depth, 8k resolution."
+            prompt = f"Architectural Digest interior photograph for {clean_g}. Expansive sunlit architectural space featuring floor-to-ceiling panoramic windows, warm walnut surfaces, polished concrete, and designer furniture. Warm volumetric morning daylight casting soft geometric shadows, Phase One medium format 35mm lens at f/8, crisp spatial depth and natural textures."
 
-        # 4. HEALTHCARE / WELLNESS
+        # 3. HEALTHCARE / WELLNESS / BIOMED
         elif re.search(r"\b(health|healthcare|wellness|medical|clinic|patient|doctor|biomed|pharma|spa|dental|telehealth|hospital)\b", text):
-            prompt = f"Pristine documentary editorial photography for {clean_g}. Healthcare specialist in a sunlit modern clinical research facility analyzing patient diagnostic metrics on an ergonomic tablet. Soft diffuse architectural daylight, 5200K daylight-balanced illumination, Leica SL2 with 50mm f/1.4 Summilux lens, shallow depth of field, authentic candid posture, clean clinical aesthetic, 8k resolution."
+            prompt = f"Pristine editorial documentary photograph for {clean_g}. Healthcare specialist in a sunlit modern clinical research facility analyzing patient diagnostic metrics on an ergonomic tablet. Soft architectural daylight, balanced 5200K illumination, Leica SL2 with 50mm lens at f/4, authentic candid posture, clean clinical aesthetic and sharp focal clarity."
 
-        # 5. LIFESTYLE / FITNESS / RETAIL / APPAREL
+        # 4. LIFESTYLE / FITNESS / RETAIL / APPAREL
         elif re.search(r"\b(lifestyle|apparel|fashion|clothing|beauty|skincare|outdoor|personal|consumer|sport|sports|fitness|activewear|gym)\b", text):
-            prompt = f"High-fashion commercial editorial photography for {clean_g}. Authentic candid model engaged in dynamic purposeful motion in a sunlit urban architectural setting. Natural directional sunlight with warm ambient fill, 35mm cinematic film grain, Hasselblad 85mm f/1.8 prime lens, vibrant tactile fabric textures, crisp focal clarity, 8k commercial print quality."
+            prompt = f"High-fashion commercial editorial photograph for {clean_g}. Confident candid model in dynamic purposeful posture in a sunlit modern urban architectural setting. Natural directional sunlight with warm ambient fill, Hasselblad X2D with 45mm lens at f/4, vibrant tactile fabric textures and authentic skin details."
 
-        # 2. B2B / CORPORATE / SAAS / DEV TOOLS (DEFAULT)
+        # 5. B2B / CORPORATE / SAAS / DEV TOOLS / CLOUD (DEFAULT)
         else:
-            prompt = f"Award-winning commercial editorial photography of an executive strategy session for {clean_g}. A senior {clean_aud} collaborating over real-time enterprise workflow architecture on a sleek laptop display in a sunlit architectural glass loft with panoramic city skyline. {camera_params}"
+            prompt = f"Commercial editorial photograph of an innovative strategy session for {clean_g}. A professional {clean_aud} working on a sleek aluminum laptop displaying clean data metrics in a sunlit architectural glass loft with city skyline views. Natural directional morning sunlight, warm wood accents, Hasselblad X2D with 50mm lens at f/4 for sharp subject focus and authentic atmosphere."
 
         return prompt
 
     def _optimize_prompt_for_diffusion(self, raw_prompt: str, extra_sharpness: bool = False) -> str:
-        """Optimizes and enhances prompts specifically for FLUX.1-schnell and SDXL (up to 110 words, clean text accents)."""
+        """Optimizes and enhances prompts specifically for FLUX.1 flow-matching diffusion on Cloudflare Workers AI."""
         clean = self._clean_and_normalize_prompt(raw_prompt)
 
-        # Remove labels and conversational preambles
+        # 1. Remove labels, section markers, conversational preambles
         clean = re.sub(
-            r"(?i)^(generate an image that|create a photo of|here is a prompt for|this prompt depicts|please show|visual prompt:?|prompt:?|categorization:?)\s*",
+            r"(?i)^(generate an image that|create a photo of|here is a prompt for|this prompt depicts|please show|visual prompt:?|prompt:?|categorization:?|hero visual directive:?)\s*",
             "",
             clean,
         ).strip()
         clean = re.sub(r"(?i)no text.*$", "", clean).strip()
 
-        # Suppress any cartoon/3D/illustration keywords
+        # 2. STRIP ALL QUOTATION MARKS & QUOTED ACCENTS (Strict: prevents FLUX from rendering floating text words)
+        clean = re.sub(r'["\u201c\u201d\u2018\u2019]', '', clean)
+
+        # 3. Fix token boundary concatenations (e.g. TitaniumiPhone -> Titanium iPhone, Off-Whitebackground -> Off-White background)
+        clean = re.sub(r'([a-z]{2,})([A-Z][a-z])', r'\1 \2', clean)
+
+        # 4. Suppress cartoon / 3D / illustration / sci-fi / CGI keywords
         clean = re.sub(
             r"(?i)\b(cartoon|3d render|isometric|octane render|illustration|vector art|claymation|plastic|toy|anime|drawing)\b",
-            "photorealistic commercial photograph",
+            "commercial photograph",
             clean,
         )
-        # Strip forbidden sci-fi / holographic / floating / HUD keywords for strict physical realism
         clean = re.sub(
             r"(?i)\b(holographic|floating|ethereal|glowing abstract|hud|hologram|holograms|glowing glass|floating data|wireframe|wireframes|sci-fi|dark room|crowded group|awkward pose)\b",
             "",
             clean,
         )
+
+        # 5. Ditch outdated SD 1.5 token soups (they degrade FLUX.1's flow-matching transformer)
+        clean = re.sub(
+            r"(?i)\b(8k resolution|8k|4k|hyperrealistic|photorealistic|ultra-detailed|highly detailed|masterpiece|trending on artstation|crisp details|creamy bokeh|soft bokeh)\b",
+            "",
+            clean,
+        )
+
+        # 6. Replace shallow depth-of-field clichés (f/1.4 blur blurs faces and products) with sharp focus
+        clean = re.sub(
+            r"(?i)\b(shallow depth of field|f/1\.4|f/1\.2|f/1\.8)\b",
+            "sharp focus at f/4",
+            clean,
+        )
+
+        # Normalize whitespace and punctuation
         clean = re.sub(r"\s+", " ", clean).strip()
+        clean = re.sub(r",\s*,+", ",", clean)
+        clean = re.sub(r"\.\s*,", ".", clean)
+        clean = re.sub(r"\s+\.", ".", clean)
 
         if len(clean) < 25:
-            clean = f"Award-winning commercial editorial photography of a sunlit modern workspace for {self._clean_phrase(self.goal, 45)}. A professional working on a laptop displaying data architecture. Natural warm directional daylight, Hasselblad H6D-100c medium format, 85mm lens, 8k resolution, crisp details."
+            clean = f"Commercial editorial photograph for {self._clean_phrase(self.goal, 45)}. A professional working on a sleek aluminum laptop in a sunlit architectural glass loft with city skyline views. Natural directional daylight, Hasselblad X2D with 50mm lens at f/4 for sharp subject focus."
 
-        # If short text accents inside double quotes ("...") are present, append photography text anchors
-        if '"' in clean:
-            text_anchors = "clear sharp typography, crisp sans-serif lettering, high legibility"
-            if text_anchors not in clean.lower():
-                clean += f", {text_anchors}"
+        # 7. Optical clarity anchors for FLUX.1 if no optical camera is present
+        if not any(k in clean.lower() for k in ("sony", "hasselblad", "leica", "phase one", "canon", "nikon")):
+            clean += ", shot on Sony A7R V with 50mm lens at f/4 for sharp subject focus and authentic material physics"
 
-        # Ensure mandatory camera parameters are present
-        camera_params = "Natural warm lighting, Hasselblad 85mm prime lens f/1.4, shallow depth of field, 8k resolution, crisp details."
-        if "hasselblad" not in clean.lower():
-            clean += f" {camera_params}"
+        if extra_sharpness:
+            clean += ", pristine focal clarity, refined edge contrast, studio calibrated lighting"
 
-        # Enforce prompt length cap up to 110 words for FLUX.1 / SDXL optimal fidelity
+        # Cap length to 100 words for optimal FLUX.1 T5 encoder fidelity
         words = clean.split()
-        if len(words) > 110:
-            clean = " ".join(words[:110])
-            if clean.count('"') % 2 != 0:
-                clean += '"'
+        if len(words) > 100:
+            clean = " ".join(words[:100]).rstrip(",;:- ") + "."
 
         return clean
 
@@ -1264,8 +1372,8 @@ Output ONLY the final image prompt string (no markdown headers, no labels like '
             draw.rounded_rectangle(
                 [(cx1, cy1), (cx2, cy2)],
                 radius=int(20 * scale),
-                fill=(11, 17, 32, 225),
-                outline=(99, 102, 241, 150),
+                fill=(11, 17, 32, 170),
+                outline=(99, 102, 241, 140),
                 width=int(max(1, 2 * scale)),
             )
 
@@ -1487,113 +1595,283 @@ Output ONLY the final image prompt string (no markdown headers, no labels like '
             generated_this_round = False
             round_model = None
 
-            # ── PRIMARY IMAGE GENERATION ENGINE: Hugging Face Diffusion (FLUX.1-schnell / SDXL) ──
-            hf_token = getattr(self.settings, "effective_hf_token", "") or os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or ""
-            hf_candidates = [
-                getattr(self.settings, "HUGGINGFACE_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell"),
-                "black-forest-labs/FLUX.1-schnell",
-                "ByteDance/SDXL-Lightning",
-                "stabilityai/stable-diffusion-xl-base-1.0",
-                "runwayml/stable-diffusion-v1-5",
-            ]
-            seen_hf = set()
-            ordered_hf = [m for m in hf_candidates if m and not (m in seen_hf or seen_hf.add(m))]
+            # ══════════════════════════════════════════════════════════════
+            # METHOD A (PRIMARY): Cloudflare Workers AI FLUX.1 Engine
+            # Uses user's CLOUDFLARE_API_TOKEN & CLOUDFLARE_ACCOUNT_ID
+            # to query @cf/black-forest-labs/flux-1-schnell directly on
+            # Cloudflare's global edge GPU network at maximum speed.
+            # ══════════════════════════════════════════════════════════════
+            cf_token = (
+                getattr(self.settings, "effective_cloudflare_token", "")
+                or os.getenv("CLOUDFLARE_API_TOKEN", "")
+            ).strip("\"'")
+            cf_account_id = (
+                getattr(self.settings, "effective_cloudflare_account_id", "")
+                or os.getenv("CLOUDFLARE_ACCOUNT_ID", "")
+            ).strip("\"'")
+            cf_model = getattr(self.settings, "CLOUDFLARE_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell")
+            if not cf_model.startswith("@cf/"):
+                cf_model = f"@cf/{cf_model}"
 
-            # Method A: huggingface_hub InferenceClient (12.0s probe per candidate)
-            try:
-                from huggingface_hub import InferenceClient
-                client_kwargs = {"timeout": 12.0}
-                if hf_token:
-                    client_kwargs["api_key"] = hf_token
-                hf_client = InferenceClient(**client_kwargs)
+            if not generated_this_round and cf_token and cf_account_id:
+                try:
+                    import httpx, base64
+                    print(f"[Swarm Image Agent] Attempt {attempt} querying Cloudflare Workers AI: {cf_model}...")
+                    if on_log:
+                        await on_log(f"Generating primary visual via Cloudflare Workers AI ({cf_model.split('/')[-1]})...")
 
-                for hf_model in ordered_hf[:2]:
-                    try:
-                        print(f"[Swarm Image Agent] Attempt {attempt} querying HF model via InferenceClient: {hf_model} (1024x1024)...")
-                        call_kwargs = {
-                            "prompt": diffusion_prompt,
-                            "model": hf_model,
-                            "height": 1024,
-                            "width": 1024,
-                        }
-                        if "flux" in hf_model.lower():
-                            call_kwargs["num_inference_steps"] = 4
-                            call_kwargs["guidance_scale"] = 0.0
-                        else:
-                            call_kwargs["negative_prompt"] = (
-                                "cartoon, 3d, cgi, plastic, toy, illustration, vector, clipart, painting, sketch, blurry"
-                            )
+                    cf_url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account_id}/ai/run/{cf_model}"
+                    cf_headers = {
+                        "Authorization": f"Bearer {cf_token}",
+                        "Content-Type": "application/json",
+                    }
+                    cf_payload = {
+                        "prompt": diffusion_prompt[:1500],
+                        "steps": 6 if not is_reattempt else 8,
+                    }
 
-                        pil_img = await asyncio.wait_for(
-                            asyncio.to_thread(
-                                _safe_hf_text_to_image,
-                                hf_client,
-                                **call_kwargs
-                            ),
-                            timeout=12.0,
+                    async with httpx.AsyncClient(timeout=35.0) as cf_client:
+                        cf_res = await cf_client.post(
+                            cf_url,
+                            headers=cf_headers,
+                            json=cf_payload,
                         )
-                        if pil_img:
-                            pil_img.save(image_path)
-                            generated_this_round = True
-                            round_model = f"huggingface/{hf_model.split('/')[-1]}"
-                            print(f"[Swarm Image Agent] HF model {hf_model} rendered successfully.")
-                            break
-                    except (Exception, RuntimeError, StopIteration, BaseException) as hf_err:
-                        err_str = str(hf_err).strip() or repr(hf_err)
-                        print(f"[Swarm Image Agent] HF model {hf_model} client error: {err_str}")
-                        continue
-            except Exception as e:
-                err_str = str(e).strip() or repr(e)
-                print(f"[Swarm Image Agent] HF InferenceClient unavailable: {err_str}")
 
-            # Method B: Direct HTTP REST API Fast Probe (2.5s per candidate)
-            if not generated_this_round:
-                import httpx
-                for hf_model in ordered_hf[:2]:
-                    try:
-                        print(f"[Swarm Image Agent] Attempt {attempt} querying HF via Direct HTTP REST API: {hf_model}...")
-                        headers = {"Content-Type": "application/json"}
-                        if hf_token:
-                            headers["Authorization"] = f"Bearer {hf_token}"
-                        
-                        api_urls = [
-                            f"https://api-inference.huggingface.co/models/{hf_model}",
-                            f"https://router.huggingface.co/hf-inference/v1/models/{hf_model}",
-                        ]
+                        if cf_res.status_code == 200:
+                            content_type = cf_res.headers.get("content-type", "")
+                            # Cloudflare returns JSON with result.image base64 or direct binary image
+                            if "json" in content_type:
+                                cf_data = cf_res.json()
+                                result_obj = cf_data.get("result", {})
+                                b64_img = ""
+                                if isinstance(result_obj, dict):
+                                    b64_img = result_obj.get("image", "")
+                                elif isinstance(result_obj, str):
+                                    b64_img = result_obj
 
-                        payload_json = {"inputs": diffusion_prompt}
-                        if "flux" in hf_model.lower():
-                            payload_json["parameters"] = {"num_inference_steps": 4, "guidance_scale": 0.0}
+                                if b64_img and len(b64_img) > 500:
+                                    img_bytes = base64.b64decode(b64_img)
+                                    with open(image_path, "wb") as f:
+                                        f.write(img_bytes)
+                                    # Save pristine uncomposited raw render
+                                    raw_path = image_path.parent / f"{image_path.stem}_raw.png"
+                                    with open(raw_path, "wb") as f:
+                                        f.write(img_bytes)
+                                    generated_this_round = True
+                                    round_model = f"cloudflare/{cf_model.split('/')[-1]}"
+                                    print(f"[Swarm Image Agent] Cloudflare Workers AI {cf_model} rendered successfully ({len(img_bytes)} bytes, steps={cf_payload['steps']}).")
+                            elif len(cf_res.content) > 5000:
+                                # Raw binary image stream (JPEG/PNG)
+                                with open(image_path, "wb") as f:
+                                    f.write(cf_res.content)
+                                raw_path = image_path.parent / f"{image_path.stem}_raw.png"
+                                with open(raw_path, "wb") as f:
+                                    f.write(cf_res.content)
+                                generated_this_round = True
+                                round_model = f"cloudflare/{cf_model.split('/')[-1]}"
+                                print(f"[Swarm Image Agent] Cloudflare Workers AI {cf_model} rendered binary image successfully ({len(cf_res.content)} bytes, steps={cf_payload['steps']}).")
                         else:
-                            payload_json["parameters"] = {
-                                "negative_prompt": "cartoon, 3d, cgi, plastic, toy, illustration, vector, clipart, painting, sketch, blurry"
+                            err_preview = cf_res.text[:300] if cf_res.text else ""
+                            print(f"[Swarm Image Agent] Cloudflare Workers AI HTTP {cf_res.status_code}: {err_preview}")
+                except Exception as cf_err:
+                    print(f"[Swarm Image Agent] Cloudflare Workers AI error: {cf_err}")
+
+            # ══════════════════════════════════════════════════════════════
+            # METHOD B (FALLBACK 1): Eden AI Universal Image Generation
+            # Falls back here if Cloudflare is unavailable or fails.
+            # Uses user's EDEN_AI_API_KEY to query stabilityai / replicate.
+            # ══════════════════════════════════════════════════════════════
+            eden_token = getattr(self.settings, "effective_eden_ai_token", "") or os.getenv("EDEN_AI_API_KEY") or ""
+            if not generated_this_round and eden_token:
+                if on_log:
+                    await on_log("Cloudflare Workers AI unavailable, falling back to Eden AI universal image generation...")
+                eden_providers = [
+                    "image/generation/stabilityai",
+                    "image/generation/replicate",
+                ]
+                try:
+                    import httpx, base64
+                    for eden_model in eden_providers:
+                        try:
+                            print(f"[Swarm Image Agent] Attempt {attempt} querying Eden AI: {eden_model} (1024x1024)...")
+                            if on_log:
+                                await on_log(f"Generating visual via Eden AI ({eden_model.split('/')[-1]})...")
+                            eden_payload = {
+                                "model": eden_model,
+                                "input": {
+                                    "text": diffusion_prompt[:500],
+                                    "resolution": "1024x1024",
+                                },
                             }
+                            eden_headers = {
+                                "Authorization": f"Bearer {eden_token}",
+                                "Content-Type": "application/json",
+                            }
+                            async with httpx.AsyncClient(timeout=25.0) as eden_client:
+                                eden_res = await eden_client.post(
+                                    "https://api.edenai.run/v3/universal-ai",
+                                    json=eden_payload,
+                                    headers=eden_headers,
+                                    follow_redirects=True,
+                                )
+                                if eden_res.status_code == 200:
+                                    eden_data = eden_res.json()
+                                    # Log actual response structure for debugging
+                                    print(f"[Swarm Image Agent] Eden AI {eden_model} response keys: {list(eden_data.keys())}")
 
-                        async with httpx.AsyncClient(timeout=2.5) as http_client:
-                            for url in api_urls:
-                                try:
-                                    res = await http_client.post(
-                                        url,
-                                        json=payload_json,
-                                        headers=headers,
-                                    )
-                                    if res.status_code == 200 and res.content and len(res.content) > 5000:
-                                        with open(image_path, "wb") as f:
-                                            f.write(res.content)
+                                    # Check if Eden AI reported an error in the response body
+                                    eden_status = eden_data.get("status", "")
+                                    eden_error = eden_data.get("error", "")
+                                    # Eden AI may return error as {} or None (not real errors)
+                                    has_real_error = False
+                                    if isinstance(eden_error, str) and eden_error.strip():
+                                        has_real_error = True
+                                    elif isinstance(eden_error, dict) and eden_error:  # non-empty error dict
+                                        err_msg = eden_error.get("message", "") or eden_error.get("error", "")
+                                        if err_msg:
+                                            has_real_error = True
+                                    if eden_status == "fail" or has_real_error:
+                                        print(f"[Swarm Image Agent] Eden AI {eden_model} returned error in body: status={eden_status}, error={str(eden_error)[:200]}")
+                                        continue
+
+                                    img_saved = False
+
+                                    # ── Helper: extract image from a dict-like object ──
+                                    async def _try_extract_image(obj):
+                                        """Try to extract and save image from a dict containing URL or base64 data."""
+                                        nonlocal img_saved
+                                        if not isinstance(obj, dict) or img_saved:
+                                            return
+                                        # Try image resource URL
+                                        for url_key in ("image_resource_url", "image_url", "url", "image"):
+                                            val = obj.get(url_key, "")
+                                            if isinstance(val, str) and val.startswith("http"):
+                                                try:
+                                                    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as dl_client:
+                                                        dl_res = await dl_client.get(val)
+                                                        if dl_res.status_code == 200 and len(dl_res.content) > 5000:
+                                                            with open(image_path, "wb") as f:
+                                                                f.write(dl_res.content)
+                                                            img_saved = True
+                                                            print(f"[Swarm Image Agent] Eden AI saved image from URL key '{url_key}' ({len(dl_res.content)} bytes)")
+                                                            return
+                                                except Exception as dl_err:
+                                                    print(f"[Swarm Image Agent] Eden AI download from '{url_key}' failed: {dl_err}")
+                                        # Try base64 encoded image data
+                                        for b64_key in ("image", "b64_json", "image_b64", "base_64", "base64"):
+                                            val = obj.get(b64_key, "")
+                                            if isinstance(val, str) and len(val) > 200 and not val.startswith("http"):
+                                                try:
+                                                    img_bytes = base64.b64decode(val)
+                                                    if len(img_bytes) > 5000:
+                                                        with open(image_path, "wb") as f:
+                                                            f.write(img_bytes)
+                                                        img_saved = True
+                                                        print(f"[Swarm Image Agent] Eden AI saved image from base64 key '{b64_key}' ({len(img_bytes)} bytes)")
+                                                        return
+                                                except Exception:
+                                                    pass
+
+                                    # ── Strategy 1: Check 'output' key (Eden AI primary response location) ──
+                                    output_data = eden_data.get("output")
+                                    if output_data:
+                                        if isinstance(output_data, dict):
+                                            await _try_extract_image(output_data)
+                                            # Check nested items/generations inside output
+                                            if not img_saved:
+                                                for nested_key in ("items", "generations", "images", "data"):
+                                                    nested = output_data.get(nested_key, [])
+                                                    if isinstance(nested, list):
+                                                        for item in nested:
+                                                            if isinstance(item, dict):
+                                                                await _try_extract_image(item)
+                                                            elif isinstance(item, str) and item.startswith("http"):
+                                                                try:
+                                                                    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as dl_client:
+                                                                        dl_res = await dl_client.get(item)
+                                                                        if dl_res.status_code == 200 and len(dl_res.content) > 5000:
+                                                                            with open(image_path, "wb") as f:
+                                                                                f.write(dl_res.content)
+                                                                            img_saved = True
+                                                                            break
+                                                                except Exception:
+                                                                    pass
+                                                            if img_saved:
+                                                                break
+                                                    if img_saved:
+                                                        break
+                                        elif isinstance(output_data, list):
+                                            for item in output_data:
+                                                if isinstance(item, dict):
+                                                    await _try_extract_image(item)
+                                                elif isinstance(item, str) and item.startswith("http"):
+                                                    try:
+                                                        async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as dl_client:
+                                                            dl_res = await dl_client.get(item)
+                                                            if dl_res.status_code == 200 and len(dl_res.content) > 5000:
+                                                                with open(image_path, "wb") as f:
+                                                                    f.write(dl_res.content)
+                                                                img_saved = True
+                                                                break
+                                                    except Exception:
+                                                        pass
+                                                if img_saved:
+                                                    break
+
+                                    # ── Strategy 2: Check 'original_response' key ──
+                                    if not img_saved:
+                                        orig_resp = eden_data.get("original_response")
+                                        if isinstance(orig_resp, dict):
+                                            await _try_extract_image(orig_resp)
+                                            if not img_saved:
+                                                for nested_key in ("data", "output", "images", "artifacts"):
+                                                    nested = orig_resp.get(nested_key, [])
+                                                    if isinstance(nested, list):
+                                                        for item in nested:
+                                                            if isinstance(item, dict):
+                                                                await _try_extract_image(item)
+                                                            if img_saved:
+                                                                break
+                                                    if img_saved:
+                                                        break
+
+                                    # ── Strategy 3: Check 'generations' / 'items' top-level ──
+                                    if not img_saved:
+                                        for list_key in ("generations", "items", "images", "data"):
+                                            gen_list = eden_data.get(list_key, [])
+                                            if isinstance(gen_list, list):
+                                                for gen in gen_list:
+                                                    if isinstance(gen, dict):
+                                                        await _try_extract_image(gen)
+                                                    if img_saved:
+                                                        break
+                                            if img_saved:
+                                                break
+
+                                    # ── Strategy 4: Check top-level keys directly ──
+                                    if not img_saved:
+                                        await _try_extract_image(eden_data)
+
+                                    if img_saved:
                                         generated_this_round = True
-                                        round_model = f"huggingface-http/{hf_model.split('/')[-1]}"
-                                        print(f"[Swarm Image Agent] HF HTTP REST {hf_model} returned {len(res.content)} bytes.")
+                                        round_model = f"edenai/{eden_model.split('/')[-1]}"
+                                        print(f"[Swarm Image Agent] Eden AI {eden_model} rendered successfully.")
                                         break
-                                except Exception:
-                                    continue
-                        if generated_this_round:
-                            break
-                    except Exception as http_err:
-                        err_str = str(http_err).strip() or repr(http_err)
-                        print(f"[Swarm Image Agent] HF HTTP REST error: {err_str}")
+                                    else:
+                                        # Log output structure for debugging
+                                        output_preview = str(output_data)[:300] if output_data else "None"
+                                        print(f"[Swarm Image Agent] Eden AI {eden_model} returned 200 but no usable image data. output preview: {output_preview}")
+                                else:
+                                    err_body = eden_res.text[:300] if eden_res.text else ""
+                                    print(f"[Swarm Image Agent] Eden AI {eden_model} HTTP {eden_res.status_code}: {err_body}")
+                        except Exception as eden_model_err:
+                            print(f"[Swarm Image Agent] Eden AI {eden_model} error: {eden_model_err}")
+                            continue
+                except Exception as eden_err:
+                    print(f"[Swarm Image Agent] Eden AI unavailable: {eden_err}")
 
 
-            # ── METHOD C: Pollinations.ai FLUX.1 Engine (High-Fidelity Prompt-Grounded Diffusion) ──
+            # ── METHOD C (FALLBACK 2): Pollinations.ai FLUX.1 Engine (High-Fidelity Prompt-Grounded Diffusion) ──
             if not generated_this_round:
                 try:
                     import urllib.parse, hashlib, httpx
@@ -1613,7 +1891,7 @@ Output ONLY the final image prompt string (no markdown headers, no labels like '
                 except Exception as poll_err:
                     print(f"[Swarm Image Agent] Pollinations FLUX fetch notice: {poll_err}")
 
-            # ── METHOD D: High-Definition Photographic Base Canvas Engine (100% Reliable Fallback) ──
+            # ── METHOD D (FALLBACK 3): High-Definition Photographic Base Canvas Engine (100% Reliable Fallback) ──
             if not generated_this_round:
                 try:
                     import hashlib, httpx
@@ -2185,7 +2463,7 @@ Output ONLY the final image prompt string (no markdown headers, no labels like '
         yield {
             "type": "log",
             "timestamp": self._timestamp(),
-            "message": f"[Market Research Agent] Launching DuckDuckGo SERP queries for: {self.audience} trends...",
+            "message": f"[Market Research Agent] Launching live market intelligence and SERP trend queries for: {self.audience}...",
             "progress": 30,
         }
         research_res = await self.run_research_agent()
