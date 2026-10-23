@@ -275,6 +275,62 @@ class SwarmPipeline:
         ).strip(" ,.-&")
         return truncated or text[:max_chars]
 
+    def _extract_pure_physical_subject(self, text: str) -> str:
+        """Extracts the tangible, physical product or scene subject from a marketing directive,
+        stripping all campaign action verbs, target audience definitions, and marketing features."""
+        if not text:
+            return "commercial product"
+
+        clean = text.strip()
+
+        # 1. Remove introductory marketing campaign directives and action verbs
+        clean = re.sub(
+            r"(?i)^(launch(?:ing)?|promote(?:ing)?|announce(?:ing)?|introduce(?:ing)?|create(?:ing)?|build(?:ing)?|unveil(?:ing)?|scale|market(?:ing)?|showcase)\s+(?:the|a|an|our|new|all-new|next-generation|next-gen)?\s*",
+            "",
+            clean,
+        ).strip()
+
+        # 2. Cut off at marketing clauses: featuring, targeting, designed for, maintain, deliver, etc.
+        cut_patterns = [
+            r"(?i)\bfeaturing\b.*",
+            r"(?i)\btargeting\b.*",
+            r"(?i)\btarget\b\s+(?:active|young|b2b|enterprise|mobile|digital|creative|professionals|consumers).*",
+            r"(?i)\bdesigned for\b.*",
+            r"(?i)\bengineered for\b.*",
+            r"(?i)\bmaintain\b.*",
+            r"(?i)\bground the campaign\b.*",
+            r"(?i)\bdeliver a\b.*",
+            r"(?i)\bwith an all-day\b.*",
+            r"(?i)\bafter a single\b.*",
+            r"(?i)\bfor active,?\b.*",
+        ]
+        for pat in cut_patterns:
+            clean = re.sub(pat, "", clean).strip()
+
+        # 3. Clean leading adjectives like "the new", "all-new", "our"
+        clean = re.sub(r"(?i)^(the|our|a|an|new|all-new|next-generation|next-gen)\s+", "", clean).strip()
+
+        # 4. Clean trailing punctuation / prepositions
+        clean = re.sub(r"\b(with|for|and|in|at|featuring|by|to|of)\b$", "", clean, flags=re.IGNORECASE).strip(" ,.-:;")
+
+        # 5. Normalize subject if known category for physical concreteness
+        orig_lower = text.lower()
+        subject_lower = clean.lower()
+        if re.search(r"\b(phone|smartphone|android|iphone|device|mobile|handset|moto|motorola|samsung|galaxy|pixel)\b", subject_lower) or re.search(r"\b(moto\s+g|motorola|galaxy\s+s|pixel\s+\d)\b", orig_lower):
+            if not re.search(r"\b(smartphone|phone)\b", subject_lower):
+                clean += " smartphone"
+        elif re.search(r"\b(sneakers?|shoes?|footwear|kicks|running shoe)\b", subject_lower) or re.search(r"\b(sneaker|shoe|footwear)\b", orig_lower):
+            if not re.search(r"\b(sneakers?|shoes?)\b", subject_lower):
+                clean += " performance sneakers"
+        elif re.search(r"\b(perfume|fragrance|cologne|scent)\b", subject_lower):
+            clean = re.sub(r"(?i)\bnamed\s+", "", clean).strip()
+            if not re.search(r"\b(bottle|glass)\b", subject_lower):
+                clean += " in a luxury minimalist glass bottle"
+        elif re.search(r"\b(cli|kubernetes|saas|software|platform|backend|cloud|api|devops)\b", subject_lower):
+            clean = "modern developer workstation with high-end matte display in a sunlit architectural studio"
+
+        return clean.strip() or "commercial product"
+
     # ── Live Search & Real-Time Knowledge Retrieval Helpers ──────────
     async def _fetch_live_market_news(self, query: str, max_results: int = 4) -> List[Dict[str, str]]:
         """Fetches live real-time market news and industry shifts via Google News RSS without blocking or timeouts."""
@@ -541,14 +597,13 @@ Produce a complete marketing bundle structured with these EXACT markdown heading
 
 ### 🎨 Multimodal Visual Generation Prompt
 (A comprehensive, creative-director grade visual specification structured as:
-**Hero Visual Directive**: [A rich, evocative 2-3 sentence photorealistic scene prompt engineered for modern diffusion models (FLUX.1 / Midjourney). Explicitly describe the focal subject, dynamic real-world action, tactile material textures, and architectural or studio environment tailored specifically to "{self.goal}". Lead with tangible visual storytelling—no generic stock cliches, no floating holograms, no fake CGI.]
-- **Scene & Subject**: [Specific personas (1-3 people max) or hero product staging, authentic engagement, natural body language, purposeful momentum.]
-- **Environment & Architecture**: [Tactile architectural setting, e.g. sunlit glass-partitioned corporate loft, industrial innovation lab, artisan studio, concrete & warm walnut accents.]
-- **Lighting & Atmosphere**: [Cinematic directional key light, warm amber rim lighting, soft diffuse shadows, volumetric daylight, 5200K daylight-balanced tone.]
-- **Camera & Optical Specs**: [Shot on Sony A7R V or Hasselblad X2D, 50mm lens at f/4 to f/5.6 for sharp subject focus, edge-to-edge clarity, authentic material physics, natural color balance.]
-- **Color Palette & Brand Aesthetics**: [Curated 3-tone color harmony aligned with the brand, e.g. deep obsidian slate (#0F172A), brushed titanium, warm honey amber.]
+**Hero Visual Directive**: [A rich, evocative 2-sentence photorealistic commercial photography scene engineered for FLUX.1. Extract ONLY the physical product or tangible focal subject from "{self.goal}". Describe its real-world physical staging, materials, tactile textures, and architectural or studio environment. NEVER include marketing verbs like 'launch', 'promote', 'target', or business jargon. NEVER include quotation marks or words as text.]
+- **Scene & Subject**: [Extract the concrete physical hero subject (product, device, apparel, or single person in a studio).]
+- **Environment & Staging**: [Tactile surface, e.g. textured dark slate, warm walnut desk, travertine stone plinth, or sunlit architectural studio.]
+- **Lighting & Atmosphere**: [Directional softbox key light, subtle warm rim highlights, soft contact shadows, 5600K daylight-balanced tone.]
+- **Camera & Optical Specs**: [Shot on Sony A7R V or Hasselblad X2D, 50mm lens at f/4 to f/5.6 for sharp edge-to-edge subject clarity and authentic material physics.]
 - **Aspect Ratio**: 16:9 (Landscape for LinkedIn & Web) / 1:1 (Square for Feed Ads) / 9:16 (Stories/Reels)
-- **Negative Prompt Guardrails**: No text, no words in quotes, no floating typography, no uncanny plastic skin, no distorted fingers or hands, no floating sci-fi holograms, no glowing wireframes, no blurred out-of-focus subjects.)
+- **Negative Prompt Guardrails**: No text, no words in quotes, no floating typography, no uncanny plastic skin, no distorted hands, no floating sci-fi holograms, no glowing wireframes, no blurred out-of-focus subjects.)
 
 Format your response clearly using the specified markdown headings.
 """
@@ -563,8 +618,9 @@ Format your response clearly using the specified markdown headings.
             clean_aud = self.audience.strip()
             clean_tone = self.tone.strip()
 
-            # Dynamic visual prompt heuristic matching the goal
-            visual_concept = self._heuristic_brand_prompt(grounding, f"Visual representation for {clean_goal}")
+            # Dynamic visual prompt heuristic matching the physical subject
+            clean_subj = self._extract_pure_physical_subject(self.goal)
+            visual_concept = self._heuristic_brand_prompt(grounding, clean_subj)
             clean_tag_aud = re.sub(r'[^a-zA-Z0-9]', '', clean_aud)[:16]
             clean_tag_goal = re.sub(r'[^a-zA-Z0-9]', '', clean_goal)[:16]
 
@@ -698,13 +754,13 @@ Check out the full campaign breakdown and copy assets in the channel files!
 - **Scene & Subject**: Purposeful, authentic professional engagement tailored directly to {clean_aud}, featuring tactile textures and natural workplace momentum.
 - **Lighting & Atmosphere**: Warm directional key light, soft volumetric daylight, cinematic rim lighting, 5200K balanced color temperature.
 - **Camera & Optical Specs**: Photographed on Sony A7R V or Hasselblad X2D, 50mm lens at f/4 for sharp subject focus, edge-to-edge clarity, and authentic material physics.
-- **Color Palette & Brand Aesthetics**: Commercial studio palette tailored to {clean_goal[:30]}, featuring deep obsidian slate, brushed titanium, and warm amber accents.
+- **Color Palette & Brand Aesthetics**: Commercial studio palette tailored to {clean_subj[:35]}, featuring deep obsidian slate, brushed titanium, and warm amber accents.
 - **Aspect Ratio**: 16:9 (Landscape for LinkedIn & Web) / 1:1 (Square for Feed Ads) / 9:16 (Stories/Reels)
 - **Negative Prompt Guardrails**: No text, no words in quotes, no floating typography, no uncanny CGI, plastic skin, distorted hands, floating sci-fi holograms, or blurry out-of-focus subjects.
 """
 
         # Extract visual prompt details
-        visual_prompt_text = self._heuristic_brand_prompt(grounding, self.goal)
+        visual_prompt_text = self._heuristic_brand_prompt(grounding, self._extract_pure_physical_subject(self.goal))
         if "Multimodal Visual Generation Prompt" in generated_copy:
             parts = generated_copy.split("Multimodal Visual Generation Prompt")
             if len(parts) > 1:
@@ -1033,71 +1089,50 @@ Check out the full campaign breakdown and copy assets in the channel files!
     async def _generate_brand_visual_prompt(
         self, grounding_context: str, copywriter_visual_prompt: str
     ) -> str:
-        """Autonomous Creative Director: Uses web search with a 2-second timeout and enforces Groq prompt format structure under 60 words."""
+        """Autonomous Creative Director: Extracts pure physical hero subject, strips marketing jargon,
+        and generates photorealistic, hallucination-free prompts optimized for FLUX.1."""
         cleaned_hint = self._clean_and_normalize_prompt(copywriter_visual_prompt)
-        clean_subject = self._clean_phrase(self.goal, 45)
+        clean_subject = self._extract_pure_physical_subject(self.goal)
 
-        # 1. BRAND & INDUSTRY WEB SEARCH GROUNDING
-        brand_search_context = ""
-        try:
-            brand_query = f"{clean_subject} visual brand design identity"
-            w_items, n_items = await asyncio.gather(
-                self._fetch_wiki_knowledge(brand_query, max_results=2),
-                self._fetch_live_market_news(f"{clean_subject} design style", max_results=2),
-            )
-            # If custom brand yielded no wiki results, query industry topic
-            if not w_items:
-                words = [w for w in re.findall(r"\b[a-zA-Z]{3,}\b", self.goal) if w.lower() not in {"launch", "promote", "create", "build", "scale", "slash", "boost"}]
-                if len(words) > 1:
-                    topic = " ".join(words[1:3])
-                    w_items = await self._fetch_wiki_knowledge(f"{topic} design aesthetic", max_results=2)
-            snippets = [w["snippet"] for w in w_items if w.get("snippet")] + [n["title"] for n in n_items if n.get("title")]
-            if snippets:
-                brand_search_context = " ".join(snippets[:3])
-        except Exception as e:
-            print(f"[Creative Director Search] Notice: {e}")
-
+        # 1. Extract concrete visual specifications from uploaded brief / brand guidelines if present
         guidelines_section = ""
         if grounding_context and "=== USER-ATTACHED MULTIMODAL CAMPAIGN BRIEF" in grounding_context:
-            guidelines_section = f"USER-ATTACHED VISUAL BRIEF & PRODUCT SPECIFICATIONS:\n{grounding_context[:1200]}\n"
+            guidelines_section = f"USER-ATTACHED VISUAL BRIEF & PRODUCT SPECIFICATIONS:\n{grounding_context[:1000]}\n"
         elif grounding_context and "Chunk" in grounding_context:
-            guidelines_section = f"VERIFIED BRAND GUIDELINES & COLOR SPECIFICATIONS:\n{grounding_context[:800]}\n"
-        else:
-            guidelines_section = f"BRAND & INDUSTRY VISUAL IDENTITY:\n{brand_search_context[:800]}\n"
+            guidelines_section = f"VERIFIED BRAND GUIDELINES & COLOR SPECIFICATIONS:\n{grounding_context[:600]}\n"
 
         # 2. High-speed Groq LPU visual prompt synthesis
         brand_prompt_request = f"""You are a World-Class Commercial Advertising Photographer and Creative Director creating visual prompts for the FLUX.1 flow-matching AI engine.
 
-CAMPAIGN DIRECTIVE:
-Goal: {self.goal}
-Target Audience: {self.audience}
-Brand Tone: {self.tone}
+CRITICAL OBJECTIVE:
+Transform the campaign directive into a PURE, TANGIBLE PHYSICAL STILL-LIFE OR COMMERCIAL PHOTOGRAPHY SCENE for FLUX.1.
+
+HERO PHYSICAL SUBJECT:
+{clean_subject}
+
+AUDIENCE CONTEXT:
+{self.audience}
 
 GROUNDED VISUAL GUIDELINES & SPECIFICATIONS:
 {guidelines_section}
 
-OBJECTIVE:
-Craft an evocative, photorealistic commercial advertising prompt (between 60 and 85 words) specifically optimized for FLUX.1 flow-matching architecture that embodies "{self.goal}".
+STRICT FLUX.1 PHOTOGRAPHY & ANTI-HALLUCINATION RULES:
+1. PURE PHYSICAL SCENE DESCRIPTION (NO MARKETING TALK):
+   - Describe ONLY what a high-end commercial photographer's camera physically captures: the physical product or person, its exact surface materials, placement, and environment.
+   - ABSOLUTELY NEVER mention marketing action verbs or business slogans: DO NOT write "launch", "introducing", "all-day", "target audience", "young professionals", "empowering", "revolutionize", "conversion", "omnichannel", or "maintain tone".
+2. HERO SUBJECT & MATERIALS:
+   - For physical products/hardware/apparel/goods: Center on {clean_subject} resting on a tactile, elegant surface (e.g., textured dark slate plinth, warm walnut wood, or travertine stone) with clean studio reflections and subtle contact shadows.
+   - For software/SaaS/cloud: Showcase an authentic professional working on a sleek aluminum laptop in an architectural glass studio with warm directional daylight.
+3. LIGHTING & CAMERA OPTICS:
+   - Soft diffused 5600K directional softbox key light, subtle warm amber rim highlights, balanced contrast, zero harsh blowouts.
+   - Photographed on Hasselblad X2D or Sony A7R V with 50mm lens at f/4 to f/5.6 for sharp edge-to-edge subject clarity and authentic material physics.
+4. ZERO TOLERANCE FOR HALLUCINATIONS & ARTIFACTS:
+   - ABSOLUTELY NO TEXT: Never write words in quotation marks (no "MOTO", no "IPHONE", no brand words as letters — FLUX will render bizarre distorted floating letters).
+   - NO SCI-FI TROPES: No floating holograms, glowing HUD lines, digital matrix grids, or floating UI particles.
+   - NO SD 1.5 TOKEN SOUPS: Do NOT use "8k", "photorealistic", "hyperrealistic", "masterpiece", "trending on artstation".
 
-FLUX.1 PROMPT PRINCIPLES:
-1. CLEAR HERO COMPOSITION:
-   - If promoting a physical product, device, apparel, or packaging: Create a striking commercial hero product showcase. Place the product on an elegant, tactile surface (e.g. brushed slate, dark walnut, textured linen, or minimalist polished stone) with refined studio reflections and clean angles.
-   - If promoting software, services, or lifestyle: Place ONE authentic, professional person in a purposeful, natural action in an architectural, sunlit modern environment (e.g., modern glass-partitioned studio or workspace, reviewing clean analytics on a sleek aluminum laptop).
-2. LIGHTING & AMBIANCE:
-   - Natural directional daylight, warm morning golden-hour rays through floor-to-ceiling windows, soft diffused fill, subtle amber rim highlights, authentic shadow gradients.
-3. OPTICS & SHARP FOCUS:
-   - Shot on Hasselblad X2D or Sony A7R V with 50mm lens at f/4 to f/5.6 for sharp subject focus and edge-to-edge clarity across the frame.
-   - Avoid shallow depth of field or f/1.4 blur (it blurs faces and products).
-4. TACTILE MATERIAL PHYSICS:
-   - Describe real physical textures: brushed titanium, warm wood grain, matte slate, fine fabric weave, natural skin pores with authentic expression.
-
-CRITICAL GUARDRAILS (STRICT):
-- ABSOLUTELY NO TEXT, NO WORDS IN QUOTES, NO TYPOGRAPHY REQUESTS (never write "GROWTH", "INNOVATION", or quote marks — FLUX will render bizarre floating letters).
-- NO TOKEN SOUPS (do NOT include "8k", "photorealistic", "hyperrealistic", "masterpiece", "trending on artstation", "crisp details").
-- NO sci-fi holograms, glowing HUD lines, floating charts, plastic skin, or crowded awkward groups.
-
-OUTPUT FORMAT MANDATE:
-Output ONLY the clean prompt string in natural descriptive prose. No markdown headers, no 'Prompt:', no quotes around the response, no conversational preambles.
+OUTPUT FORMAT:
+Output ONLY the clean prompt string (55 to 75 words) in natural descriptive English prose. No markdown headers, no 'Prompt:', no quotes around the response.
 """
 
         groq_visual_prompt = await self._generate_content_via_groq(brand_prompt_request, timeout_sec=10.0)
@@ -1109,36 +1144,36 @@ Output ONLY the clean prompt string in natural descriptive prose. No markdown he
             if len(cleaned) > 30:
                 return cleaned
 
-        # Intelligent fallback: construct from brand grounding text, web insights, and goal heuristics
+        # Intelligent fallback: construct from clean physical subject
         return self._heuristic_brand_prompt(grounding_context, cleaned_hint)
 
     def _heuristic_brand_prompt(self, grounding_context: str, copywriter_hint: str) -> str:
-        """Derives a dynamic, high-fidelity prompt for FLUX.1 categorized across 5 marketing industries."""
+        """Derives a dynamic, high-fidelity prompt for FLUX.1 categorized across 5 marketing industries,
+        strictly centering on the extracted physical subject without marketing jargon."""
+        clean_subj = self._extract_pure_physical_subject(self.goal)
         g_ctx = (grounding_context or "").strip()
         c_hint = (copywriter_hint or "").strip()
-        text = ((self.goal or "") + " " + (self.audience or "") + " " + g_ctx + " " + c_hint).lower()
-        clean_g = self._clean_phrase(self.goal, 55)
-        clean_aud = self._clean_phrase(self.audience, 40)
+        text = (clean_subj + " " + (self.goal or "") + " " + g_ctx + " " + c_hint).lower()
 
         # 1. PRODUCT / E-COMMERCE / FOOD & BEVERAGE / CONSUMER GOODS / HARDWARE
-        if re.search(r"\b(product|products|ecommerce|e-commerce|shop|store|food|beverage|drink|coffee|restaurant|retail|goods|packaging|bottle|cosmetics|serum|phone|iphone|device|gadget|hardware)\b", text):
-            prompt = f"Commercial studio product photograph for {clean_g}. Premium hero product staging resting on a textured dark slate and warm walnut surface with refined studio reflections. Soft diffused directional softbox lighting, warm amber rim highlights, Sony A7R V with 50mm lens at f/5.6 for sharp edge-to-edge clarity and authentic material physics."
+        if re.search(r"\b(product|products|ecommerce|e-commerce|shop|store|food|beverage|drink|coffee|restaurant|retail|goods|packaging|bottle|cosmetics|serum|phone|iphone|device|gadget|hardware|watch|sneaker|shoes|moto|motorola|galaxy|pixel|headphone|audio|speaker)\b", text):
+            prompt = f"Commercial studio product photograph of {clean_subj}. Centered hero product staging resting on a textured dark slate and warm walnut surface with refined studio reflections. Soft diffused directional softbox lighting, warm amber rim highlights, Sony A7R V with 50mm lens at f/5.6 for sharp edge-to-edge clarity and authentic material physics."
 
         # 2. REAL ESTATE / SPATIAL / ARCHITECTURE
         elif re.search(r"\b(real estate|property|architectural|interior|exterior|building|house|apartment|home|construction|decor|space|spatial|residence|condo|villas)\b", text):
-            prompt = f"Architectural Digest interior photograph for {clean_g}. Expansive sunlit architectural space featuring floor-to-ceiling panoramic windows, warm walnut surfaces, polished concrete, and designer furniture. Warm volumetric morning daylight casting soft geometric shadows, Phase One medium format 35mm lens at f/8, crisp spatial depth and natural textures."
+            prompt = f"Architectural Digest interior photograph of {clean_subj}. Expansive sunlit architectural space featuring floor-to-ceiling panoramic windows, warm walnut surfaces, polished concrete, and designer furniture. Warm volumetric morning daylight casting soft geometric shadows, Phase One medium format 35mm lens at f/8, crisp spatial depth and natural textures."
 
         # 3. HEALTHCARE / WELLNESS / BIOMED
         elif re.search(r"\b(health|healthcare|wellness|medical|clinic|patient|doctor|biomed|pharma|spa|dental|telehealth|hospital)\b", text):
-            prompt = f"Pristine editorial documentary photograph for {clean_g}. Healthcare specialist in a sunlit modern clinical research facility analyzing patient diagnostic metrics on an ergonomic tablet. Soft architectural daylight, balanced 5200K illumination, Leica SL2 with 50mm lens at f/4, authentic candid posture, clean clinical aesthetic and sharp focal clarity."
+            prompt = f"Pristine editorial documentary photograph of {clean_subj}. Healthcare specialist in a sunlit modern clinical research facility analyzing patient diagnostic metrics on an ergonomic tablet. Soft architectural daylight, balanced 5200K illumination, Leica SL2 with 50mm lens at f/4, authentic candid posture, clean clinical aesthetic and sharp focal clarity."
 
         # 4. LIFESTYLE / FITNESS / RETAIL / APPAREL
         elif re.search(r"\b(lifestyle|apparel|fashion|clothing|beauty|skincare|outdoor|personal|consumer|sport|sports|fitness|activewear|gym)\b", text):
-            prompt = f"High-fashion commercial editorial photograph for {clean_g}. Confident candid model in dynamic purposeful posture in a sunlit modern urban architectural setting. Natural directional sunlight with warm ambient fill, Hasselblad X2D with 45mm lens at f/4, vibrant tactile fabric textures and authentic skin details."
+            prompt = f"High-fashion commercial editorial photograph of {clean_subj}. Confident candid model in dynamic purposeful posture in a sunlit modern urban architectural setting. Natural directional sunlight with warm ambient fill, Hasselblad X2D with 45mm lens at f/4, vibrant tactile fabric textures and authentic skin details."
 
         # 5. B2B / CORPORATE / SAAS / DEV TOOLS / CLOUD (DEFAULT)
         else:
-            prompt = f"Commercial editorial photograph of an innovative strategy session for {clean_g}. A professional {clean_aud} working on a sleek aluminum laptop displaying clean data metrics in a sunlit architectural glass loft with city skyline views. Natural directional morning sunlight, warm wood accents, Hasselblad X2D with 50mm lens at f/4 for sharp subject focus and authentic atmosphere."
+            prompt = f"Commercial editorial photograph of an innovative tech strategy session. A professional working on a sleek aluminum laptop displaying clean data metrics in a sunlit architectural glass loft with city skyline views. Natural directional morning sunlight, warm wood accents, Hasselblad X2D with 50mm lens at f/4 for sharp subject focus and authentic atmosphere."
 
         return prompt
 
@@ -1155,12 +1190,22 @@ Output ONLY the clean prompt string in natural descriptive prose. No markdown he
         clean = re.sub(r"(?i)no text.*$", "", clean).strip()
 
         # 2. STRIP ALL QUOTATION MARKS & QUOTED ACCENTS (Strict: prevents FLUX from rendering floating text words)
-        clean = re.sub(r'["\u201c\u201d\u2018\u2019]', '', clean)
+        clean = re.sub(r'["\u201c\u201d\u2018\u2019\']', '', clean)
 
-        # 3. Fix token boundary concatenations (e.g. TitaniumiPhone -> Titanium iPhone, Off-Whitebackground -> Off-White background)
+        # 3. STRIP MARKETING VERBS & BUZZWORDS THAT CAUSE HALLUCINATIONS
+        clean = re.sub(
+            r"(?i)\b(launch(?:ing)?\s+the|launch(?:ing)?|announc(?:ing)?|introduc(?:ing)?|promot(?:ing)?|featuring an?|with an? all-day|designed for|engineered for|target audience|for active young|empowering|revolutionizing|maintain .* tone)\b",
+            "",
+            clean,
+        )
+
+        # 4. STRIP ALL-CAPS WORDS THAT LOOK LIKE FLOATING LOGOS/WORDS
+        clean = re.sub(r'\b[A-Z]{4,}\b', '', clean)
+
+        # 5. Fix token boundary concatenations (e.g. TitaniumiPhone -> Titanium iPhone, Off-Whitebackground -> Off-White background)
         clean = re.sub(r'([a-z]{2,})([A-Z][a-z])', r'\1 \2', clean)
 
-        # 4. Suppress cartoon / 3D / illustration / sci-fi / CGI keywords
+        # 6. Suppress cartoon / 3D / illustration / sci-fi / CGI keywords
         clean = re.sub(
             r"(?i)\b(cartoon|3d render|isometric|octane render|illustration|vector art|claymation|plastic|toy|anime|drawing)\b",
             "commercial photograph",
@@ -1172,14 +1217,14 @@ Output ONLY the clean prompt string in natural descriptive prose. No markdown he
             clean,
         )
 
-        # 5. Ditch outdated SD 1.5 token soups (they degrade FLUX.1's flow-matching transformer)
+        # 7. Ditch outdated SD 1.5 token soups (they degrade FLUX.1's flow-matching transformer)
         clean = re.sub(
             r"(?i)\b(8k resolution|8k|4k|hyperrealistic|photorealistic|ultra-detailed|highly detailed|masterpiece|trending on artstation|crisp details|creamy bokeh|soft bokeh)\b",
             "",
             clean,
         )
 
-        # 6. Replace shallow depth-of-field clichés (f/1.4 blur blurs faces and products) with sharp focus
+        # 8. Replace shallow depth-of-field clichés (f/1.4 blur blurs faces and products) with sharp focus
         clean = re.sub(
             r"(?i)\b(shallow depth of field|f/1\.4|f/1\.2|f/1\.8)\b",
             "sharp focus at f/4",
@@ -1192,20 +1237,21 @@ Output ONLY the clean prompt string in natural descriptive prose. No markdown he
         clean = re.sub(r"\.\s*,", ".", clean)
         clean = re.sub(r"\s+\.", ".", clean)
 
+        clean_subj = self._extract_pure_physical_subject(self.goal)
         if len(clean) < 25:
-            clean = f"Commercial editorial photograph for {self._clean_phrase(self.goal, 45)}. A professional working on a sleek aluminum laptop in a sunlit architectural glass loft with city skyline views. Natural directional daylight, Hasselblad X2D with 50mm lens at f/4 for sharp subject focus."
+            clean = f"Commercial studio product photograph of {clean_subj}. Centered hero product staging resting on textured dark slate and warm walnut surface with soft diffused softbox lighting, Sony A7R V with 50mm lens at f/4 for sharp subject focus."
 
-        # 7. Optical clarity anchors for FLUX.1 if no optical camera is present
+        # 9. Optical clarity anchors for FLUX.1 if no optical camera is present
         if not any(k in clean.lower() for k in ("sony", "hasselblad", "leica", "phase one", "canon", "nikon")):
             clean += ", shot on Sony A7R V with 50mm lens at f/4 for sharp subject focus and authentic material physics"
 
         if extra_sharpness:
             clean += ", pristine focal clarity, refined edge contrast, studio calibrated lighting"
 
-        # Cap length to 100 words for optimal FLUX.1 T5 encoder fidelity
+        # Cap length to 85 words for optimal FLUX.1 T5 encoder fidelity
         words = clean.split()
-        if len(words) > 100:
-            clean = " ".join(words[:100]).rstrip(",;:- ") + "."
+        if len(words) > 85:
+            clean = " ".join(words[:85]).rstrip(",;:- ") + "."
 
         return clean
 
