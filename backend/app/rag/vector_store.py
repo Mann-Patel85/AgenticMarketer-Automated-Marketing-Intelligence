@@ -28,6 +28,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from backend.app.core.config import get_settings
+from backend.app.database import SessionLocal, GroundingDocument, GroundingChunk
 from backend.app.services.rag_prompts import (
     RAG_SYSTEM_INSTRUCTION,
     build_rag_synthesis_prompt,
@@ -96,26 +97,171 @@ class RAGVectorStore:
                 json.dump([], f, indent=2)
 
     def _load_metadata(self) -> List[Dict[str, Any]]:
+        """Load document metadata from persistent database (PostgreSQL / SQLite), with file cache sync."""
+        # 1. Primary: load from persistent database
+        try:
+            with SessionLocal() as db:
+                db_docs = db.query(GroundingDocument).order_by(GroundingDocument.created_at.desc()).all()
+                if db_docs:
+                    records = [d.to_dict() for d in db_docs]
+                    try:
+                        with open(self.metadata_file, "w", encoding="utf-8") as f:
+                            json.dump(records, f, indent=2)
+                    except Exception:
+                        pass
+                    return records
+        except Exception:
+            pass
+
+        # 2. Fallback: load from local metadata JSON and migrate to DB
         try:
             with open(self.metadata_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                file_docs = json.load(f)
+                if file_docs:
+                    try:
+                        with SessionLocal() as db:
+                            for fd in file_docs:
+                                doc_id = fd.get("id") or str(uuid.uuid4())
+                                if not db.query(GroundingDocument).filter(GroundingDocument.id == doc_id).first():
+                                    db.add(GroundingDocument(
+                                        id=doc_id,
+                                        filename=fd.get("filename", "document"),
+                                        size_bytes=float(fd.get("size_bytes", 0)),
+                                        size_formatted=fd.get("size_formatted", "0 KB"),
+                                        chunk_count=float(fd.get("chunk_count", 0)),
+                                        status=fd.get("status", "ready"),
+                                        preview=fd.get("preview", ""),
+                                        created_at=fd.get("created_at", datetime.now(timezone.utc).isoformat()),
+                                    ))
+                            db.commit()
+                    except Exception:
+                        pass
+                return file_docs
         except Exception:
             return []
 
     def _save_metadata(self, data: List[Dict[str, Any]]) -> None:
-        with open(self.metadata_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        """Save document metadata to local file cache and persistent database."""
+        try:
+            with open(self.metadata_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
+        try:
+            with SessionLocal() as db:
+                current_ids = {d.get("id") for d in data if d.get("id")}
+                # Remove deleted documents from database
+                db.query(GroundingDocument).filter(~GroundingDocument.id.in_(current_ids)).delete(synchronize_session=False)
+
+                for d in data:
+                    doc_id = d.get("id")
+                    if not doc_id:
+                        continue
+                    existing = db.query(GroundingDocument).filter(GroundingDocument.id == doc_id).first()
+                    if existing:
+                        existing.filename = d.get("filename", existing.filename)
+                        existing.size_bytes = float(d.get("size_bytes", existing.size_bytes))
+                        existing.size_formatted = d.get("size_formatted", existing.size_formatted)
+                        existing.chunk_count = float(d.get("chunk_count", existing.chunk_count))
+                        existing.status = d.get("status", existing.status)
+                        existing.preview = d.get("preview", existing.preview)
+                        if "extracted_text" in d:
+                            existing.extracted_text = d["extracted_text"]
+                    else:
+                        db.add(GroundingDocument(
+                            id=doc_id,
+                            filename=d.get("filename", "document"),
+                            size_bytes=float(d.get("size_bytes", 0)),
+                            size_formatted=d.get("size_formatted", "0 KB"),
+                            chunk_count=float(d.get("chunk_count", 0)),
+                            status=d.get("status", "ready"),
+                            preview=d.get("preview", ""),
+                            extracted_text=d.get("extracted_text", ""),
+                            created_at=d.get("created_at", datetime.now(timezone.utc).isoformat()),
+                        ))
+                db.commit()
+        except Exception as e:
+            print(f"[RAG VectorStore DB Sync Warning] Metadata error: {e}")
 
     def _load_chunks(self) -> List[Dict[str, Any]]:
+        """Load vector chunks from persistent database, with file cache fallback."""
+        try:
+            with SessionLocal() as db:
+                db_chunks = db.query(GroundingChunk).all()
+                if db_chunks:
+                    chunk_records = [c.to_dict() for c in db_chunks]
+                    try:
+                        with open(self.chunks_file, "w", encoding="utf-8") as f:
+                            json.dump(chunk_records, f, indent=2)
+                    except Exception:
+                        pass
+                    return chunk_records
+        except Exception:
+            pass
+
         try:
             with open(self.chunks_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                file_chunks = json.load(f)
+                if file_chunks:
+                    try:
+                        with SessionLocal() as db:
+                            for fc in file_chunks:
+                                cid = fc.get("id") or str(uuid.uuid4())
+                                if not db.query(GroundingChunk).filter(GroundingChunk.id == cid).first():
+                                    db.add(GroundingChunk(
+                                        id=cid,
+                                        doc_id=fc.get("doc_id", ""),
+                                        doc_name=fc.get("doc_name", ""),
+                                        chunk_index=float(fc.get("chunk_index", 0)),
+                                        text=fc.get("text", ""),
+                                        vector=fc.get("vector", []),
+                                        created_at=fc.get("created_at", datetime.now(timezone.utc).isoformat()),
+                                    ))
+                            db.commit()
+                    except Exception:
+                        pass
+                return file_chunks
         except Exception:
             return []
 
     def _save_chunks(self, chunks: List[Dict[str, Any]]) -> None:
-        with open(self.chunks_file, "w", encoding="utf-8") as f:
-            json.dump(chunks, f, indent=2)
+        """Save vector chunks to local file cache and persistent database."""
+        try:
+            with open(self.chunks_file, "w", encoding="utf-8") as f:
+                json.dump(chunks, f, indent=2)
+        except Exception:
+            pass
+
+        try:
+            with SessionLocal() as db:
+                existing_ids = {c.id for c in db.query(GroundingChunk.id).all()}
+                new_ids = {c.get("id") for c in chunks if c.get("id")}
+
+                # Clean up deleted chunks
+                stale_ids = existing_ids - new_ids
+                if stale_ids:
+                    db.query(GroundingChunk).filter(GroundingChunk.id.in_(stale_ids)).delete(synchronize_session=False)
+
+                # Insert new chunks
+                to_insert = []
+                for c in chunks:
+                    cid = c.get("id")
+                    if cid and cid not in existing_ids:
+                        to_insert.append(GroundingChunk(
+                            id=cid,
+                            doc_id=c.get("doc_id", ""),
+                            doc_name=c.get("doc_name", ""),
+                            chunk_index=float(c.get("chunk_index", 0)),
+                            text=c.get("text", ""),
+                            vector=c.get("vector", []),
+                            created_at=c.get("created_at", datetime.now(timezone.utc).isoformat()),
+                        ))
+                if to_insert:
+                    db.bulk_save_objects(to_insert)
+                db.commit()
+        except Exception as e:
+            print(f"[RAG VectorStore DB Sync Warning] Chunks error: {e}")
 
     def sanitize_text(self, text: str) -> str:
         """Clean up PDF character encoding artifacts, Unicode replacement chars, and whitespace."""
@@ -406,6 +552,7 @@ class RAGVectorStore:
             "chunk_count": len(chunks),
             "status": "ready",
             "preview": preview,
+            "extracted_text": extracted_text,
             "created_at": created_at,
         }
 

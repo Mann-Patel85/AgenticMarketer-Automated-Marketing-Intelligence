@@ -844,15 +844,16 @@ export default function DashboardPage() {
         }
     };
 
-    const handleRemoveFile = async (id, name) => {
+    const handleRemoveFile = (id, name) => {
         const target = name || id;
-        try {
-            await deleteDocument(target);
-            await loadGroundingFiles();
-        } catch (err) {
-            console.error('Remove file failed:', err);
-            setFileQueue((prev) => prev.filter((f) => f.id !== id && f.name !== target));
-        }
+        // Detach/exclude from campaign file queue only (does not delete from global Knowledge Base)
+        setFileQueue((prev) => prev.filter((f) => f.id !== id && f.name !== target));
+        setSelectedFiles((prev) => {
+            const next = new Set(prev);
+            next.delete(target);
+            next.delete(id);
+            return next;
+        });
     };
 
     const handleBriefFileUpload = async (file) => {
@@ -1845,7 +1846,7 @@ export default function DashboardPage() {
                                                             type="button"
                                                             onClick={() => handleRemoveFile(file.id)}
                                                             className="text-slate-500 hover:text-rose-400 transition p-1 cursor-pointer"
-                                                            title="Remove file"
+                                                            title="Exclude from this campaign"
                                                         >
                                                             <Trash2 className="w-3.5 h-3.5" />
                                                         </button>

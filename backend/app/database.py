@@ -102,6 +102,57 @@ class CampaignRun(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class GroundingDocument(Base):
+    """Grounding brand asset or PDF document entity for permanent vector persistence."""
+    __tablename__ = "grounding_documents"
+
+    id = Column(String(64), primary_key=True)
+    filename = Column(String(256), nullable=False)
+    size_bytes = Column(Float, default=0)
+    size_formatted = Column(String(32), default="0 KB")
+    chunk_count = Column(Float, default=0)
+    status = Column(String(32), default="ready")
+    preview = Column(Text, default="")
+    extracted_text = Column(Text, default="")
+    created_at = Column(String(64), default=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "filename": self.filename,
+            "size_bytes": int(self.size_bytes),
+            "size_formatted": self.size_formatted,
+            "chunk_count": int(self.chunk_count),
+            "status": self.status,
+            "preview": self.preview,
+            "created_at": self.created_at,
+        }
+
+
+class GroundingChunk(Base):
+    """Semantic vector chunk entity stored permanently in the database."""
+    __tablename__ = "grounding_chunks"
+
+    id = Column(String(64), primary_key=True)
+    doc_id = Column(String(64), index=True, nullable=False)
+    doc_name = Column(String(256), nullable=False)
+    chunk_index = Column(Float, default=0)
+    text = Column(Text, nullable=False)
+    vector = Column(JSON, default=list)
+    created_at = Column(String(64), default=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "doc_id": self.doc_id,
+            "doc_name": self.doc_name,
+            "chunk_index": int(self.chunk_index),
+            "text": self.text,
+            "vector": self.vector,
+            "created_at": self.created_at,
+        }
+
+
 # ── Database Connection & Engine Configuration ───────────────────────
 
 def get_database_url() -> str:
