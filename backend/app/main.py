@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from backend.app.core.config import get_settings
 from backend.app.database import init_db
 from backend.app.routers.auth import router as auth_router
+from backend.app.routers.admin import router as admin_router
 from backend.app.routers.rag import router as rag_router
 from backend.app.routers.swarm import router as swarm_router
 from backend.app.routers.publish import router as publish_router
@@ -93,6 +94,7 @@ app.add_middleware(
 
 # ── Include Routers ──────────────────────────────────────────────────
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(rag_router)
 app.include_router(swarm_router)
 app.include_router(publish_router)

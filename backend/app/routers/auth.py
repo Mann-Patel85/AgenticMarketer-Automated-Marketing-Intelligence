@@ -1,13 +1,14 @@
 """
 AgenticMarketer Backend — Authentication Router.
-Handles registration, login, and current user profile retrieval with JWT and RBAC.
-Persists users to PostgreSQL (Neon DB) / SQLAlchemy tables.
+Production Authentication, JWT Token Issuance, and Strict Role-Based Access Control (RBAC).
+Persists users to PostgreSQL (Neon DB) via SQLAlchemy models.
 """
 
+import os
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, EmailStr, Field
+from typing import Optional, List
+from pydantic import BaseModel, Field, EmailStr
 from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 
@@ -17,17 +18,18 @@ from backend.app.core.security import (
     verify_password,
     create_access_token,
     get_current_user,
+    require_roles,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
-# ── Pydantic Request / Response Schemas ──────────────────────────────
+# ── Request / Response Schemas ───────────────────────────────────────
+
 class UserRegisterRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     email: str = Field(..., min_length=3, max_length=100)
     password: str = Field(..., min_length=6)
-    role: Optional[str] = Field("marketer")
 
 
 class UserLoginRequest(BaseModel):
@@ -48,24 +50,29 @@ class AuthTokenResponse(BaseModel):
     user: UserProfileResponse
 
 
-# ── Routes ──────────────────────────────────────────────────────────
+# ── Production Endpoints ─────────────────────────────────────────────
 
 @router.post("/register", response_model=AuthTokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
-    """Register a new user in the AgenticMarketer workspace."""
+    """
+    Register a new user in the AgenticMarketer workspace.
+    Public self-registration defaults strictly to the standard 'user' role.
+    Only the configured ADMIN_EMAIL automatically receives 'admin' clearance.
+    """
     email_key = payload.email.lower().strip()
 
     existing_user = db.query(User).filter(User.email == email_key).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A user with this email address already exists.",
+            detail="An account with this email address already exists. Please sign in.",
         )
 
-    user_id = str(uuid.uuid4())
-    allowed_roles = ["leader", "admin", "marketer", "backend_dev", "frontend_dev", "user"]
-    assigned_role = payload.role.lower() if payload.role and payload.role.lower() in allowed_roles else "marketer"
+    # Strict RBAC: All public self-registrations receive standard 'user' role
+    admin_email = os.getenv("ADMIN_EMAIL", "mann@company.com").lower().strip()
+    assigned_role = "admin" if email_key == admin_email else "user"
 
+    user_id = str(uuid.uuid4())
     new_user = User(
         id=user_id,
         name=payload.name.strip(),
@@ -79,7 +86,7 @@ async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
 
-    # Issue JWT token
+    # Issue signed JWT token
     token = create_access_token({
         "sub": email_key,
         "name": new_user.name,
@@ -87,7 +94,7 @@ async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
         "uid": user_id,
     })
 
-    # Record active session in database
+    # Track active session
     session_record = UserSession(
         id=str(uuid.uuid4()),
         user_id=user_id,
@@ -111,20 +118,17 @@ async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=AuthTokenResponse)
 async def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
-    """Authenticate credentials and return a signed JWT access token."""
+    """
+    Authenticate user credentials against PostgreSQL and return a signed JWT access token.
+    Strictly denies invalid credentials with 401 Unauthorized.
+    """
     email_key = payload.email.lower().strip()
 
     user = db.query(User).filter(User.email == email_key).first()
-    # Support alias for Sarah (sarah@company.com <-> marketer@company.com)
-    if not user and email_key == "sarah@company.com":
-        user = db.query(User).filter(User.email == "marketer@company.com").first()
-    elif not user and email_key == "marketer@company.com":
-        user = db.query(User).filter(User.email == "sarah@company.com").first()
-
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password.",
+            detail="Invalid email or password. Please verify your credentials.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -135,7 +139,6 @@ async def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
         "uid": user.id,
     })
 
-    # Track session
     session_record = UserSession(
         id=str(uuid.uuid4()),
         user_id=user.id,
@@ -162,7 +165,7 @@ async def get_me(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Retrieve profile and permissions for current authenticated user."""
+    """Retrieve profile and permissions for the current authenticated user."""
     email = current_user.get("sub", "").lower().strip()
     user = db.query(User).filter(User.email == email).first()
 
@@ -171,7 +174,7 @@ async def get_me(
             id=current_user.get("uid", str(uuid.uuid4())),
             name=current_user.get("name", "User"),
             email=email,
-            role=current_user.get("role", "marketer"),
+            role=current_user.get("role", "user"),
         )
 
     return UserProfileResponse(
@@ -184,10 +187,14 @@ async def get_me(
 
 @router.get("/users", response_model=List[UserProfileResponse])
 async def get_users(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_roles(["admin", "owner"])),
     db: Session = Depends(get_db),
 ):
-    """Retrieve list of workspace team members (for workspace management)."""
+    """
+    Retrieve list of workspace team members.
+    Strict RBAC: Exclusively restricted to Super Admin (Mann Patel).
+    Non-admin callers receive 403 Forbidden.
+    """
     users = db.query(User).all()
     return [
         UserProfileResponse(

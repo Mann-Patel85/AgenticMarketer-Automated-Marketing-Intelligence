@@ -33,9 +33,7 @@ export default function AdminPage() {
     const [selectedGroqModel, setSelectedGroqModel] = useState('openai/gpt-oss-120b');
 
     const defaultCollaborators = [
-        { id: '1', name: user?.full_name || user?.name || 'Mann Patel', email: user?.email || 'mann@company.com', role: user?.role || 'leader', status: 'Active' },
-        { id: '2', name: 'Growth Marketer', email: 'marketer@company.com', role: 'marketer', status: 'Active' },
-        { id: '3', name: 'DevOps Administrator', email: 'admin@company.com', role: 'admin', status: 'Active' },
+        { id: '1', name: user?.full_name || user?.name || 'Mann Patel', email: user?.email || 'mann@company.com', role: user?.role || 'admin', status: 'Active' },
     ];
 
     useEffect(() => {
@@ -89,7 +87,7 @@ export default function AdminPage() {
     };
 
     return (
-        <ProtectedRoute allowedRoles={['leader', 'admin']}>
+        <ProtectedRoute allowedRoles={['admin', 'owner', 'leader']}>
             <div className="min-h-screen text-slate-100 pb-20 pt-6">
                 <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
                     {/* Page Header */}

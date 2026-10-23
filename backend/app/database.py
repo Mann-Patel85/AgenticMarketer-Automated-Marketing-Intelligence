@@ -179,48 +179,42 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db():
     """
-    Initializes database tables and migrates demo/seed accounts
-    as well as existing JSON data if present.
+    Initializes database tables and ensures ONLY the primary Super Admin
+    (Mann Patel) account exists, purging any prototype/demo seed accounts.
     """
     Base.metadata.create_all(bind=engine)
 
     with SessionLocal() as db:
-        # Check if users already exist
-        existing_count = db.query(User).count()
-        if existing_count == 0:
-            print("[Database] Seeding initial workspace accounts into database...")
-            default_users = [
-                User(
-                    id=str(uuid.uuid4()),
-                    name="Mann Patel",
-                    email="mann@company.com",
-                    password_hash=hash_password("admin123"),
-                    role="leader",
-                ),
-                User(
-                    id=str(uuid.uuid4()),
-                    name="System Admin",
-                    email="admin@company.com",
-                    password_hash=hash_password("admin123"),
-                    role="admin",
-                ),
-                User(
-                    id=str(uuid.uuid4()),
-                    name="Sarah Jenkins",
-                    email="sarah@company.com",
-                    password_hash=hash_password("market123"),
-                    role="marketer",
-                ),
-                User(
-                    id=str(uuid.uuid4()),
-                    name="Growth Marketer",
-                    email="marketer@company.com",
-                    password_hash=hash_password("market123"),
-                    role="marketer",
-                ),
-            ]
-            db.add_all(default_users)
+        admin_email = os.getenv("ADMIN_EMAIL", "mann@company.com").lower().strip()
+        admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
+        admin_name = os.getenv("ADMIN_NAME", "Mann Patel")
+
+        # Purge prototype / demo seed accounts from production database
+        demo_emails = ["marketer@company.com", "sarah@company.com", "admin@company.com"]
+        for demo in demo_emails:
+            if demo != admin_email:
+                db.query(User).filter(User.email == demo).delete(synchronize_session=False)
+        db.commit()
+
+        # Ensure the single primary Super Admin / Owner account exists
+        admin_user = db.query(User).filter(User.email == admin_email).first()
+        if not admin_user:
+            admin_user = User(
+                id=str(uuid.uuid4()),
+                name=admin_name,
+                email=admin_email,
+                password_hash=hash_password(admin_password),
+                role="admin",
+                created_at=datetime.now(timezone.utc),
+            )
+            db.add(admin_user)
             db.commit()
+            print(f"[Database] Provisioned primary Super Admin account: {admin_name} ({admin_email})")
+        else:
+            # Guarantee Super Admin role integrity
+            if admin_user.role != "admin":
+                admin_user.role = "admin"
+                db.commit()
 
         # Migrate local workspaces.json if found and table is empty
         workspace_count = db.query(Workspace).count()
