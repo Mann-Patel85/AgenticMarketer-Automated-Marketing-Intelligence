@@ -115,6 +115,12 @@ async def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
     email_key = payload.email.lower().strip()
 
     user = db.query(User).filter(User.email == email_key).first()
+    # Support alias for Sarah (sarah@company.com <-> marketer@company.com)
+    if not user and email_key == "sarah@company.com":
+        user = db.query(User).filter(User.email == "marketer@company.com").first()
+    elif not user and email_key == "marketer@company.com":
+        user = db.query(User).filter(User.email == "sarah@company.com").first()
+
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

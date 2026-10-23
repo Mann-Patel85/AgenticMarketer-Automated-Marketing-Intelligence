@@ -207,6 +207,13 @@ def init_db():
                 User(
                     id=str(uuid.uuid4()),
                     name="Sarah Jenkins",
+                    email="sarah@company.com",
+                    password_hash=hash_password("market123"),
+                    role="marketer",
+                ),
+                User(
+                    id=str(uuid.uuid4()),
+                    name="Growth Marketer",
                     email="marketer@company.com",
                     password_hash=hash_password("market123"),
                     role="marketer",

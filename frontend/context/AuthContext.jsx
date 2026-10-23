@@ -55,64 +55,80 @@ export const AuthProvider = ({ children }) => {
             const { access_token, user: loggedUser } = res.data;
             if (access_token) {
                 localStorage.setItem('token', access_token);
+                if (typeof document !== 'undefined') {
+                    document.cookie = `token=${access_token}; path=/; max-age=604800; SameSite=Lax`;
+                }
             }
             if (loggedUser) {
                 localStorage.setItem('agentic_user', JSON.stringify(loggedUser));
                 setUser(loggedUser);
                 return loggedUser;
             }
-        } catch (err) {
-            if (err.response && err.response.data && err.response.data.detail) {
-                throw new Error(err.response.data.detail, { cause: err });
-            }
-
-            console.warn('Backend unreachable, using offline demo credentials fallback:', err.message);
-            const role = (cleanEmail.includes('admin') || cleanEmail.includes('lead') || cleanEmail.startsWith('mann'))
-                ? 'leader'
-                : cleanEmail.includes('market')
-                    ? 'marketer'
-                    : 'user';
-
-            const fallbackUser = {
-                id: 'demo_' + Date.now().toString(36),
-                email: cleanEmail,
-                full_name: cleanEmail.split('@')[0].toUpperCase(),
-                role: role,
-            };
-            const mockToken = 'mock_jwt_token_' + Date.now();
-            localStorage.setItem('token', mockToken);
-            localStorage.setItem('agentic_user', JSON.stringify(fallbackUser));
-            setUser(fallbackUser);
-            return fallbackUser;
-        }
-    };
-
-    const register = async (email, password, fullName, role = 'marketer') => {
-        try {
-            const res = await API.post('/auth/register', {
-                email,
-                password,
-                full_name: fullName,
-                role,
-            });
             return res.data;
         } catch (err) {
             if (err.response && err.response.data && err.response.data.detail) {
                 throw new Error(err.response.data.detail, { cause: err });
             }
-            const fallbackUser = {
-                id: 'demo_' + Date.now().toString(36),
-                email,
-                full_name: fullName,
-                role,
-            };
-            return fallbackUser;
+            if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+                throw new Error('Invalid workspace email or password. Please verify credentials.', { cause: err });
+            }
+            if (err.code === 'ERR_NETWORK' || !err.response) {
+                throw new Error(`Network unreachable or CORS misconfiguration. Unable to connect to Swarm API (${API.defaults.baseURL || 'backend'}).`, { cause: err });
+            }
+            throw new Error(err?.message || 'Authentication failed. Please verify credentials.');
+        }
+    };
+
+    const register = async (emailOrPayload, password, fullName, role = 'marketer') => {
+        let reqEmail = emailOrPayload;
+        let reqPassword = password;
+        let reqName = fullName;
+        let reqRole = role;
+
+        if (typeof emailOrPayload === 'object' && emailOrPayload !== null) {
+            reqEmail = emailOrPayload.email;
+            reqPassword = emailOrPayload.password;
+            reqName = emailOrPayload.name || emailOrPayload.fullName;
+            reqRole = emailOrPayload.role || 'marketer';
+        }
+
+        try {
+            const res = await API.post('/auth/register', {
+                email: reqEmail.trim().toLowerCase(),
+                password: reqPassword,
+                name: reqName,
+                role: reqRole,
+            });
+
+            const { access_token, user: registeredUser } = res.data;
+            if (access_token) {
+                localStorage.setItem('token', access_token);
+                if (typeof document !== 'undefined') {
+                    document.cookie = `token=${access_token}; path=/; max-age=604800; SameSite=Lax`;
+                }
+            }
+            if (registeredUser) {
+                localStorage.setItem('agentic_user', JSON.stringify(registeredUser));
+                setUser(registeredUser);
+            }
+            return res.data;
+        } catch (err) {
+            if (err.response && err.response.data && err.response.data.detail) {
+                throw new Error(err.response.data.detail, { cause: err });
+            }
+            if (err.code === 'ERR_NETWORK' || !err.response) {
+                throw new Error(`Network unreachable or CORS misconfiguration. Unable to connect to Swarm API.`, { cause: err });
+            }
+            throw new Error(err?.message || 'Registration failed. Please try again.');
         }
     };
 
     const logout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('agentic_user');
+        if (typeof document !== 'undefined') {
+            document.cookie = 'token=; path=/; max-age=0; SameSite=Lax';
+        }
         setUser(null);
     };
 
