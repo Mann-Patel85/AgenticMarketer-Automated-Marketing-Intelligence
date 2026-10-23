@@ -117,9 +117,29 @@ def get_database_url() -> str:
         sqlite_path = (data_dir / "agenticmarketer.db").resolve()
         return f"sqlite:///{sqlite_path}"
 
+    # Detect installed PostgreSQL drivers
+    try:
+        import psycopg  # noqa: F401
+        has_psycopg3 = True
+    except ImportError:
+        has_psycopg3 = False
+
+    try:
+        import psycopg2  # noqa: F401
+        has_psycopg2 = True
+    except ImportError:
+        has_psycopg2 = False
+
     # Handle Postgres URL prefix variants (Render / Neon uses postgres://)
     if raw_url.startswith("postgres://"):
         raw_url = raw_url.replace("postgres://", "postgresql://", 1)
+
+    # If psycopg (v3) is requested but not installed, fallback to psycopg2 if available
+    if "postgresql+psycopg://" in raw_url and not has_psycopg3 and has_psycopg2:
+        raw_url = raw_url.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
+    # If standard postgresql:// is provided and only psycopg v3 is installed, route to psycopg3
+    elif raw_url.startswith("postgresql://") and not has_psycopg2 and has_psycopg3:
+        raw_url = raw_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
     # Automatically enforce SSL mode for Neon DB / Cloud Postgres
     if "neon.tech" in raw_url and "sslmode" not in raw_url:

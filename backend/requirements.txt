@@ -8,6 +8,7 @@ pydantic-settings>=2.2.0
 
 # Database & ORM (Neon PostgreSQL)
 sqlalchemy>=2.0.0
+psycopg[binary]>=3.2.0
 psycopg2-binary>=2.9.9
 
 # Authentication & Security
