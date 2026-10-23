@@ -264,7 +264,6 @@ AgenticMarketer-Automated-Marketing-Intelligence/
 │   │   └── api.js                      # Axios Client with Bearer Interceptor
 │   ├── package.json                    # Frontend Dependencies & Scripts
 │   └── next.config.mjs                 # Next.js Configuration
-├── .env.example                        # Template for Environment Configuration
 ├── LICENSE                             # MIT License
 └── README.md                           # System Documentation
 ```
