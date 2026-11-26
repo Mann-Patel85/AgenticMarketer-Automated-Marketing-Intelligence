@@ -18,6 +18,7 @@
 - [Core System Overview](#-core-system-overview)
 - [System Architecture](#-system-architecture)
 - [7-Agent Swarm Pipeline](#-7-agent-swarm-pipeline)
+- [Hallucination Evaluation](#-hallucination-evaluation)
 - [Tech Stack](#-tech-stack)
 - [Frontend Pages](#-frontend-pages)
 - [Security & Data Privacy](#-security--data-privacy)
@@ -133,6 +134,36 @@ When you launch a campaign, the agents run in sequence:
 7. **Social Publisher Agent**
    - **Engine:** connectors for LinkedIn, X, Facebook, Instagram, Threads, Reddit, Medium, Dev.to, WordPress, Discord, Slack and universal webhooks (Zapier, Make, Buffer).
    - **Function:** adapts copy to each platform's limits and prepares or sends the broadcast. Channels without API credentials run in sandbox mode and return simulated receipts.
+
+---
+
+## 📊 Hallucination Evaluation
+
+The anti-hallucination changes are measured by a reproducible evaluation in [`backend/evals/`](backend/evals/factcheck_eval.py). Latest run (November 2026, `openai/gpt-oss-120b` on Groq):
+
+**Fact-Check Agent on planted errors.** 24 synthetic campaigns for fictional brands, mixing true facts from each brand's fact sheet with planted false claims (wrong years, cities, percentages and prices, plus invented customers, awards, studies, statistics and features).
+
+| Metric | Result |
+| :--- | ---: |
+| Planted false claims caught | **103 / 103** (all fixed automatically) |
+| Wrong values corrected to the true value | 38 / 38 |
+| True claims wrongly flagged or removed | **0 / 82** |
+
+**Invented statistics in real AI-written copy.** 5 campaigns written three ways; statistics (%, multipliers, money) that appear in no source are counted by code, not by an AI judge.
+
+| Pipeline | Invented statistics per campaign |
+| :--- | ---: |
+| Before (old research + copywriter instructions) | 11.2 |
+| After (new instructions + Fact-Check Agent) | 0.2 |
+
+That's a **98% reduction** (56 → 1), mostly from the new instructions that stop the research and copywriter agents inventing data.
+
+**Limitations.**
+- The sample is small, and AI output varies between runs. A pilot run missed 1 of 9 planted claims, so expect a high but not perfect catch rate.
+- Non-numeric claims in real copy (such as invented features) are harder. The agent fixed about half automatically and flagged the rest for review.
+- On a free Groq plan, rate limits can stop the AI fact-check, which then falls back to checking statistics only (2 of 5 real campaigns in this run).
+
+Full results: [`backend/evals/REPORT.md`](backend/evals/REPORT.md). Re-run with `python -m backend.evals.factcheck_eval` (about 25 minutes on the free tier).
 
 ---
 
@@ -304,6 +335,9 @@ AgenticMarketer-Automated-Marketing-Intelligence/
 │   │   │   └── rag_prompts.py          # RAG answer sanitizing
 │   │   ├── database.py                 # SQLAlchemy models, init & migrations
 │   │   └── main.py                     # FastAPI app, CORS, system routes
+│   ├── evals/
+│   │   ├── factcheck_eval.py           # Hallucination evaluation harness
+│   │   └── REPORT.md                   # Latest evaluation results
 │   ├── data/uploads/images/            # Generated campaign images (runtime)
 │   ├── .env.example                    # Backend environment template
 │   └── requirements.txt                # Python dependencies
@@ -437,7 +471,8 @@ Render's free tier spins the backend down after 15 minutes of inactivity, and th
 ## 🚀 Capabilities & Roadmap
 
 - [x] **7-agent swarm pipeline:** ingestion, research, copywriting, fact-checking, image generation, SEO and publishing.
-- [x] **Anti-hallucination fact-checking:** claims cross-checked against your documents and research, corrected or flagged before you publish.
+- [x] **Anti-hallucination fact-checking:** claims cross-checked against your documents and research, corrected or flagged before you publish ([evaluated](#-hallucination-evaluation): 98% fewer invented statistics).
+- [x] **Reproducible evaluation harness** for hallucination metrics.
 - [x] **Groq LPU copywriting** with multi-channel bundles.
 - [x] **Cloudflare FLUX.1 visuals** with fallbacks and clarity scoring.
 - [x] **Private per-user knowledge bases** with TF-IDF retrieval and single-file scoped search.

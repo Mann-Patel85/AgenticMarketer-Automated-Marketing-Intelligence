@@ -260,3 +260,6 @@ backend/data/uploads/images/*
 # Runtime data (lives in the database / generated at runtime; never commit)
 backend/data/*.json
 backend/data/*.db
+
+# Raw evaluation outputs (summary lives in backend/evals/REPORT.md)
+backend/evals/results/
