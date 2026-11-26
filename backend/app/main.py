@@ -187,6 +187,8 @@ async def health_check():
         "cloudflare_model": settings.CLOUDFLARE_IMAGE_MODEL,
         "cloudflare_configured": bool(settings.effective_cloudflare_token and settings.effective_cloudflare_account_id),
         "eden_ai_configured": bool(settings.effective_eden_ai_token),
+        "nvidia_configured": bool(settings.effective_nvidia_token),
+        "nvidia_model": settings.NVIDIA_MODEL,
         "image_generation_enabled": True,
         "generated_images_count": images_count,
     }

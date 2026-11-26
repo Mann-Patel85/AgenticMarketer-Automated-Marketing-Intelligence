@@ -113,13 +113,84 @@ class SwarmPipeline:
         prompt: str,
         timeout_sec: float = 14.0,
         temperature: float = 0.7,
+        models: Optional[List[str]] = None,
+        nvidia_fallback: bool = True,
     ) -> Optional[str]:
-        """Queries Groq Cloud API (Llama 3.3 70B / Mixtral) as an ultra-fast secondary LLM engine fallback."""
+        """Queries Groq Cloud (tries each model in order), then the NVIDIA API as a backup provider (separate
+        rate limits). On failure returns None and records the reason in self._groq_last_error
+        ("no_api_key", "rate_limited", "timeout", "http_<code>", "empty_response")."""
+        content = await self._generate_content_via_groq_only(prompt, timeout_sec, temperature, models)
+        if content is not None or not nvidia_fallback:
+            return content
+        groq_error = self._groq_last_error
+        content = await self._generate_content_via_nvidia(prompt, timeout_sec=90.0, temperature=temperature)
+        if content is None and groq_error and self._groq_last_error == "no_api_key":
+            self._groq_last_error = groq_error  # NVIDIA not configured: report the Groq failure
+        return content
+
+    async def _generate_content_via_nvidia(
+        self,
+        prompt: str,
+        timeout_sec: float = 90.0,
+        temperature: float = 0.7,
+    ) -> Optional[str]:
+        """Backup LLM provider: NVIDIA API (OpenAI-compatible). Slower than Groq but has its own rate limits."""
+        token = getattr(self.settings, "effective_nvidia_token", "")
+        if not token:
+            self._groq_last_error = "no_api_key"
+            return None
+        model = getattr(self.settings, "NVIDIA_MODEL", "") or "nvidia/nemotron-3-ultra-550b-a55b"
+        base = (getattr(self.settings, "NVIDIA_BASE_URL", "") or "https://integrate.api.nvidia.com/v1").rstrip("/")
+        import httpx
+        body = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": 8192,
+        }
+        if not getattr(self.settings, "NVIDIA_ENABLE_THINKING", False):
+            # Nemotron reasoning roughly triples latency with no benefit for these tasks
+            body["chat_template_kwargs"] = {"enable_thinking": False}
+        try:
+            async with httpx.AsyncClient(timeout=timeout_sec) as client:
+                headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                res = await client.post(f"{base}/chat/completions", headers=headers, json=body)
+                if res.status_code == 400 and "chat_template_kwargs" in body:
+                    # Model doesn't support the reasoning toggle: retry with a plain request
+                    body.pop("chat_template_kwargs")
+                    res = await client.post(f"{base}/chat/completions", headers=headers, json=body)
+            if res.status_code == 200:
+                choices = res.json().get("choices", [])
+                content = (choices[0].get("message", {}).get("content") or "") if choices else ""
+                content = re.sub(r"<think>[\s\S]*?</think>", "", content, flags=re.IGNORECASE).strip()
+                if content and len(content) > 20:
+                    print(f"[Swarm] Successfully generated campaign content via NVIDIA ({model})")
+                    self._groq_last_error = None
+                    return content
+                self._groq_last_error = "empty_response"
+            else:
+                self._groq_last_error = "rate_limited" if res.status_code == 429 else f"http_{res.status_code}"
+                print(f"[Swarm] NVIDIA {model} HTTP {res.status_code}: {res.text[:100]}")
+        except Exception as e:
+            self._groq_last_error = "timeout" if "timeout" in type(e).__name__.lower() else "network_error"
+            print(f"[Swarm] NVIDIA {model} error: {type(e).__name__} {e}")
+        return None
+
+    async def _generate_content_via_groq_only(
+        self,
+        prompt: str,
+        timeout_sec: float = 14.0,
+        temperature: float = 0.7,
+        models: Optional[List[str]] = None,
+    ) -> Optional[str]:
+        """Groq Cloud only (tries each model in order)."""
+        self._groq_last_error = None
         token = getattr(self.settings, "effective_groq_token", "") or os.getenv("GROQ_API_KEY") or os.getenv("Groq_API_KEY") or ""
         if not token:
+            self._groq_last_error = "no_api_key"
             return None
 
-        groq_models = [
+        groq_models = list(models) if models else [
             getattr(self.settings, "GROQ_MODEL", "openai/gpt-oss-120b"),
             "openai/gpt-oss-120b",
             "qwen/qwen3.8-27b",
@@ -175,10 +246,14 @@ class SwarmPipeline:
                             content = re.sub(r"<think>[\s\S]*?</think>", "", content, flags=re.IGNORECASE).strip()
                             if content and len(content) > 20:
                                 print(f"[Swarm] Successfully generated campaign content via Groq AI ({model})")
+                                self._groq_last_error = None
                                 return content
+                        self._groq_last_error = "empty_response"
                     else:
+                        self._groq_last_error = "rate_limited" if res.status_code == 429 else f"http_{res.status_code}"
                         print(f"[Swarm] Groq AI {model} HTTP {res.status_code}: {res.text[:100]}")
             except Exception as e:
+                self._groq_last_error = "timeout" if "timeout" in type(e).__name__.lower() else "network_error"
                 print(f"[Swarm] Groq AI model '{model}' error: {e}")
                 continue
         return None
@@ -492,7 +567,7 @@ TARGET AUDIENCE: {self.audience}
 
 SOURCES:
 {source_lines}"""
-            groq_market_intel = await self._generate_content_via_groq(groq_prompt, timeout_sec=10.0, temperature=0.2) or ""
+            groq_market_intel = await self._generate_content_via_groq(groq_prompt, timeout_sec=10.0, temperature=0.2, nvidia_fallback=False) or ""
 
         # Build research context (clearly separating real sources from AI interpretation)
         intel_sections = []
@@ -913,7 +988,7 @@ Check out the full campaign breakdown and copy assets in the channel files!
         except Exception:
             return None
 
-    async def _verify_claims(self, copy_text: str, evidence_text: str) -> Optional[List[Dict[str, Any]]]:
+    async def _verify_claims(self, copy_text: str, evidence_text: str, models: Optional[List[str]] = None, nvidia_fallback: bool = True) -> Optional[List[Dict[str, Any]]]:
         """LLM claim extraction + verdicts against the evidence (temperature 0 for consistency)."""
         prompt = f"""You are a meticulous fact-checker for marketing copy. Compare the COPY against the EVIDENCE.
 
@@ -941,13 +1016,17 @@ TASK:
 
 Return ONLY valid JSON, no commentary, in exactly this shape:
 {{"claims": [{{"claim": "...", "verdict": "supported|contradicted|unsupported", "sources": ["B1"], "correction": ""}}]}}"""
-        raw = await self._generate_content_via_groq(prompt, timeout_sec=40.0, temperature=0.0)
+        raw = await self._generate_content_via_groq(prompt, timeout_sec=40.0, temperature=0.0, models=models, nvidia_fallback=nvidia_fallback)
         data = self._parse_json_object(raw)
         if not data or not isinstance(data.get("claims"), list):
+            self._fact_check_fail_reason = "unreadable_response" if raw else (getattr(self, "_groq_last_error", None) or "unavailable")
             return None
         claims = []
         for c in data["claims"][:25]:
             if not isinstance(c, dict) or not str(c.get("claim", "")).strip():
+                continue
+            # Some models echo the user's directive back as "claims"; those aren't copy claims
+            if re.match(r"\s*(campaign goal|target audience|brand tone)\s*:", str(c.get("claim", "")), re.IGNORECASE):
                 continue
             verdict = str(c.get("verdict", "unsupported")).lower().strip()
             if verdict not in ("supported", "contradicted", "unsupported"):
@@ -1057,9 +1136,24 @@ Return ONLY valid JSON, no commentary:
         user's own directive; corrects contradicted/unsupported claims; returns the verified copy + report."""
         evidence_text, source_index = self._build_evidence(ingestion_res, research_res)
 
-        claims = await self._verify_claims(copy_text, evidence_text)
+        main_model = getattr(self.settings, "GROQ_MODEL", "openai/gpt-oss-120b") or "openai/gpt-oss-120b"
+        # Main Groq model first; if it's busy, the helper goes straight to NVIDIA (separate rate limits)
+        claims = await self._verify_claims(copy_text, evidence_text, models=[main_model])
+        if claims is None and getattr(self, "_fact_check_fail_reason", "") != "no_api_key":
+            # Groq rate limits are per model, and the copywriter just used the main one: wait briefly and
+            # retry on the other models first before giving up on AI verification.
+            await asyncio.sleep(6)
+            fast = getattr(self.settings, "GROQ_FAST_MODEL", "openai/gpt-oss-20b") or "openai/gpt-oss-20b"
+            main = getattr(self.settings, "GROQ_MODEL", "openai/gpt-oss-120b") or "openai/gpt-oss-120b"
+            retry_order = list(dict.fromkeys([fast, "qwen/qwen3.8-27b", main]))
+            first_reason = getattr(self, "_fact_check_fail_reason", None)
+            # NVIDIA was already tried in the first attempt; this retry is Groq-only
+            claims = await self._verify_claims(copy_text, evidence_text, models=retry_order, nvidia_fallback=False)
+            if claims is None and getattr(self, "_fact_check_fail_reason", None) in (None, "unavailable"):
+                self._fact_check_fail_reason = first_reason  # keep the more specific reason
         unverified = self._unverified_stats(copy_text, evidence_text)
         mode = "llm" if claims is not None else "heuristic"
+        fail_reason = getattr(self, "_fact_check_fail_reason", None) if mode == "heuristic" else None
         claims = claims or []
         problems = [c for c in claims if c["verdict"] != "supported"]
         initial_issue_count = len(problems) + len(unverified)
@@ -1074,6 +1168,19 @@ Return ONLY valid JSON, no commentary:
                 for e in applied:
                     if 0 <= e["problem"] < len(problems):
                         fixed[id(problems[e["problem"]])] = e["replace"]
+                # One edit often fixes several claims in the same sentence: credit any problem whose
+                # distinctive number or name was in the edited text and is gone from the replacement.
+                for prob in problems:
+                    if id(prob) in fixed:
+                        continue
+                    tokens = re.findall(r"\$?\d[\d,.]*\s?%?|\b[A-Z][a-zA-Z]{3,}\b", prob["claim"])
+                    for e in applied:
+                        # The token must have left the copy entirely (so a brand name that is still used
+                        # elsewhere never counts as evidence that this particular claim was fixed)
+                        gone = [t for t in tokens if t.strip() and t in e["find"] and t not in e["replace"] and t not in final_copy]
+                        if gone:
+                            fixed[id(prob)] = e["replace"]
+                            break
                 for c in claims:
                     if id(c) in fixed:
                         c["original_verdict"] = c["verdict"]
@@ -1086,10 +1193,18 @@ Return ONLY valid JSON, no commentary:
         remaining = counts["contradicted"] + counts["unsupported"] + len(unverified)
 
         if mode == "heuristic":
-            status = "verified" if not unverified else "needs_review"
+            # The AI claim check did not run: never present this as "verified".
+            reason_text = {
+                "rate_limited": "the AI service (Groq) hit its rate limit",
+                "unreadable_response": "the AI returned an answer that couldn't be read",
+                "timeout": "the AI service timed out",
+                "no_api_key": "no Groq API key is configured",
+            }.get(fail_reason or "", "the AI service was unavailable")
+            status = "unverified" if not unverified else "needs_review"
             summary = (
-                "AI verification unavailable; ran the statistics check only. "
-                + ("No unsourced statistics found." if not unverified else f"{len(unverified)} statistic(s) don't appear in any source — review before publishing.")
+                f"Claims were not fact-checked because {reason_text}. Only statistics were checked: "
+                + ("none are unsourced." if not unverified else f"{len(unverified)} don't appear in any source.")
+                + " Review the copy yourself before publishing, or run the campaign again."
             )
         elif remaining == 0:
             status = "revised" if revised else "verified"
@@ -1109,6 +1224,7 @@ Return ONLY valid JSON, no commentary:
             "agent": "Fact-Check Agent",
             "status": status,
             "mode": mode,
+            "unverified_reason": fail_reason,
             "revised": revised,
             "summary": summary,
             "counts": counts,
@@ -1469,7 +1585,7 @@ OUTPUT FORMAT:
 Output ONLY the clean prompt string (55 to 75 words) in natural descriptive English prose. No markdown headers, no 'Prompt:', no quotes around the response.
 """
 
-        groq_visual_prompt = await self._generate_content_via_groq(brand_prompt_request, timeout_sec=10.0)
+        groq_visual_prompt = await self._generate_content_via_groq(brand_prompt_request, timeout_sec=10.0, nvidia_fallback=False)
         if not groq_visual_prompt:
             groq_visual_prompt = await self._generate_content_via_grok(brand_prompt_request, timeout_sec=10.0)
         if groq_visual_prompt and len(groq_visual_prompt.strip()) > 30:

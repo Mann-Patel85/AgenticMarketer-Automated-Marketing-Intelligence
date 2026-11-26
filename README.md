@@ -181,7 +181,7 @@ Full results: [`backend/evals/REPORT.md`](backend/evals/REPORT.md). Re-run with 
 ### Backend
 - **Framework:** Python / FastAPI, served by Uvicorn
 - **Database:** PostgreSQL (Neon) via SQLAlchemy; falls back to local SQLite when `DATABASE_URL` is not set
-- **LLM:** Groq Cloud (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`); optional xAI Grok
+- **LLM:** Groq Cloud (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`); NVIDIA API (Nemotron 3 Ultra) as backup when Groq is rate-limited; optional xAI Grok
 - **Images:** Cloudflare Workers AI FLUX.1, with Eden AI and Pollinations fallbacks
 - **Retrieval:** custom TF-IDF cosine engine (scikit-learn) with stop-word penalties, stored in the database and cached in memory
 - **Documents:** `pypdf`, `python-docx`, Pillow, `beautifulsoup4`
@@ -434,6 +434,7 @@ See [`backend/.env.example`](backend/.env.example) for the full template.
 | `BACKEND_PROD_URL` | | Public backend URL, used to build the OAuth callback. |
 | `GROQ_API_KEY` | ✅ | Copywriting and RAG answers. `GROQ_MODEL` / `GROQ_FAST_MODEL` override the models. |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | ✅ | FLUX.1 image generation and image analysis. |
+| `NVIDIA_API_KEY` | | Backup LLM from build.nvidia.com (default model `nvidia/nemotron-3-ultra-550b-a55b`, override with `NVIDIA_MODEL`). Used when Groq is rate-limited — notably by the Fact-Check Agent, which otherwise falls back to a statistics-only check. |
 | `EDEN_AI_API_KEY`, `GROK_API_KEY` / `XAI_API_KEY` | | Optional image and text fallbacks. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | | Enable Sign in with Google. `GOOGLE_REDIRECT_URI` optionally overrides the callback URL. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAILS_FROM_EMAIL` or `RESEND_API_KEY` | | Welcome, invite and password reset emails. Without them, emails are only logged. |

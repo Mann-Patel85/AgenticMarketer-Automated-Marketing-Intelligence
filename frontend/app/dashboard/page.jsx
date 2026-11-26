@@ -68,7 +68,13 @@ const FACT_CHECK_LABELS = {
     verified: 'Verified against your sources',
     revised: 'Corrected & verified',
     needs_review: 'Needs your review',
+    unverified: 'Not fully checked',
 };
+
+// A report where the AI claim check didn't run is never shown as verified
+// (also covers reports saved before the 'unverified' status existed).
+const factCheckStatus = (fc) => (fc && fc.mode === 'heuristic' && fc.status === 'verified' ? 'unverified' : fc?.status);
+const factCheckNeedsAttention = (fc) => ['needs_review', 'unverified'].includes(factCheckStatus(fc));
 
 // Clean text utility: strips markdown artifacts, bold/italic asterisks, hash headers, and blockquotes
 function cleanMarkdownText(text) {
@@ -2163,7 +2169,7 @@ export default function DashboardPage() {
                                             <ShieldCheck className="w-3.5 h-3.5" />
                                             <span>Fact Check</span>
                                             {factCheck && (
-                                                <span className={`w-2 h-2 rounded-full ${factCheck.status === 'needs_review' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                                                <span className={`w-2 h-2 rounded-full ${factCheckNeedsAttention(factCheck) ? 'bg-amber-400' : 'bg-emerald-400'}`} />
                                             )}
                                         </button>
 
@@ -2224,14 +2230,18 @@ export default function DashboardPage() {
                                     {/* TAB 1: Campaign Copy Output */}
                                     {activeOutputTab === 'output' && (
                                         <div className="flex-1 flex flex-col">
-                                            {generatedOutput && factCheck?.status === 'needs_review' && (
+                                            {generatedOutput && factCheckNeedsAttention(factCheck) && (
                                                 <button
                                                     type="button"
                                                     onClick={() => setActiveOutputTab('factcheck')}
                                                     className="mx-4 mt-4 px-3 py-2 rounded-xl text-left text-xs text-amber-200 bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 hover:bg-amber-500/15 transition cursor-pointer"
                                                 >
                                                     <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                                                    <span>{factCheck.issues_remaining} claim(s) aren&apos;t backed by your sources. Review them in the Fact Check tab before publishing.</span>
+                                                    <span>
+                                                        {factCheck.mode === 'heuristic'
+                                                            ? 'The fact-check couldn\u2019t fully run for this campaign, so claims weren\u2019t verified. Review the copy before publishing, or run it again.'
+                                                            : `${factCheck.issues_remaining} claim(s) aren\u2019t backed by your sources. Review them in the Fact Check tab before publishing.`}
+                                                    </span>
                                                 </button>
                                             )}
                                             {!generatedOutput && !isExecuting ? (
@@ -2371,7 +2381,7 @@ export default function DashboardPage() {
                                                                         <div className="flex items-center gap-2">
                                                                             <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
                                                                                 <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                                                                                Autonomous Swarm Verified
+                                                                                {factCheck && !factCheckNeedsAttention(factCheck) ? 'Fact-checked against your sources' : 'AI-generated draft'}
                                                                             </span>
                                                                             <span className="text-xs text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                                                                                 12 Formats Ready
@@ -3447,26 +3457,27 @@ export default function DashboardPage() {
                                              ) : (
                                                  <>
                                                      <div className={`p-5 rounded-2xl border flex flex-col gap-4 ${
-                                                         factCheck.status === 'needs_review'
+                                                         factCheckNeedsAttention(factCheck)
                                                              ? 'bg-amber-500/10 border-amber-500/30'
                                                              : 'bg-emerald-500/10 border-emerald-500/30'
                                                      }`}>
                                                          <div className="flex items-start gap-3">
-                                                             {factCheck.status === 'needs_review' ? (
+                                                             {factCheckNeedsAttention(factCheck) ? (
                                                                  <AlertTriangle className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" />
                                                              ) : (
                                                                  <ShieldCheck className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
                                                              )}
                                                              <div>
-                                                                 <div className={`text-sm font-bold ${factCheck.status === 'needs_review' ? 'text-amber-300' : 'text-emerald-300'}`}>
-                                                                     {FACT_CHECK_LABELS[factCheck.status] || 'Checked'}
+                                                                 <div className={`text-sm font-bold ${factCheckNeedsAttention(factCheck) ? 'text-amber-300' : 'text-emerald-300'}`}>
+                                                                     {FACT_CHECK_LABELS[factCheckStatus(factCheck)] || 'Checked'}
                                                                  </div>
                                                                  <p className="text-sm text-slate-300 mt-1">{factCheck.summary}</p>
                                                                  {factCheck.mode === 'heuristic' && (
-                                                                     <p className="text-xs text-slate-400 mt-1">AI verification was unavailable for this run, so only statistics were checked.</p>
+                                                                     <p className="text-xs text-slate-400 mt-1">Product features, customers, studies and other claims were not verified. Running the campaign again usually works once the AI service is free.</p>
                                                                  )}
                                                              </div>
                                                          </div>
+                                                         {factCheck.mode !== 'heuristic' && (
                                                          <div className="flex flex-wrap gap-2 shrink-0 font-mono text-xs">
                                                              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">{factCheck.counts?.supported ?? 0} supported</span>
                                                              {(factCheck.counts?.corrected ?? 0) > 0 && (
@@ -3475,6 +3486,7 @@ export default function DashboardPage() {
                                                              <span className="px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-500/30">{factCheck.counts?.contradicted ?? 0} contradicted</span>
                                                              <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30">{factCheck.counts?.unsupported ?? 0} unsupported</span>
                                                          </div>
+                                                         )}
                                                      </div>
 
                                                      {factCheck.revised && (
@@ -3497,7 +3509,11 @@ export default function DashboardPage() {
                                                      <div className="space-y-2">
                                                          <div className="text-xs font-mono uppercase tracking-wider text-slate-400">Claims checked ({factCheck.claims?.length || 0})</div>
                                                          {(factCheck.claims || []).length === 0 && (
-                                                             <p className="text-sm text-slate-400">No specific factual claims were found in the copy.</p>
+                                                             <p className="text-sm text-slate-400">
+                                                                 {factCheck.mode === 'heuristic'
+                                                                     ? 'Claims weren\u2019t checked in this run.'
+                                                                     : 'No specific factual claims were found in the copy.'}
+                                                             </p>
                                                          )}
                                                          {(factCheck.claims || []).map((c, i) => (
                                                              <div key={i} className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex items-start gap-3">

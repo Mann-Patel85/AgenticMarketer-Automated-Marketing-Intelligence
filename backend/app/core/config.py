@@ -49,6 +49,20 @@ class Settings(BaseSettings):
         """Returns the model for image generation."""
         return self.CLOUDFLARE_IMAGE_MODEL or "@cf/black-forest-labs/flux-1-schnell"
 
+    # ── NVIDIA API (build.nvidia.com) — backup LLM when Groq is rate-limited ──
+    NVIDIA_API_KEY: str = ""
+    NVIDEA_API_KEY: str = ""  # accepted alias (common misspelling)
+    NVIDIA_MODEL: str = "nvidia/nemotron-3-ultra-550b-a55b"
+    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
+    NVIDIA_ENABLE_THINKING: bool = False  # Nemotron reasoning mode (slower; off by default)
+
+    @property
+    def effective_nvidia_token(self) -> str:
+        """Returns the NVIDIA API key from NVIDIA_API_KEY (or the NVIDEA_API_KEY alias)."""
+        import os
+        token = self.NVIDIA_API_KEY or self.NVIDEA_API_KEY or os.getenv("NVIDIA_API_KEY") or os.getenv("NVIDEA_API_KEY") or ""
+        return token.strip().strip("\"'")
+
     # ── Cloudflare Workers AI (Primary Image Generation) ────────────
     CLOUDFLARE_ACCOUNT_ID: str = ""
     CLOUDFLARE_API_TOKEN: str = ""

@@ -175,7 +175,7 @@ class ModelCapture:
         self._ctx.__exit__(*exc)
         out = self.buf.getvalue()
         sys.__stdout__.write(out)
-        self.models = re.findall(r"via Groq AI \(([^)]+)\)", out)
+        self.models = re.findall(r"via (?:Groq AI|NVIDIA) \(([^)]+)\)", out)
         self.rate_limited = len(re.findall(r"rate limited|HTTP 429", out))
 
 
