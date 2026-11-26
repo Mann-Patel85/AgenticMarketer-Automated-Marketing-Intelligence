@@ -32,6 +32,12 @@ API.interceptors.request.use((config) => {
 });
 
 // ── System & Stats ───────────────────────────────────────────────
+// Fire-and-forget warm-up: starts waking the Render backend (cold start can
+// take 50s+) as soon as the app loads, before the user triggers real calls.
+export const warmUpBackend = () => {
+    API.get('/ping', { timeout: 120000 }).catch(() => {});
+};
+
 export const fetchHealth = async () => {
     try {
         const res = await API.get('/health');

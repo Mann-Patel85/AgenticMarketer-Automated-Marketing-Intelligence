@@ -138,6 +138,18 @@ async def root():
     }
 
 
+@app.api_route("/ping", methods=["GET", "HEAD"], tags=["System"])
+@app.api_route("/api/ping", methods=["GET", "HEAD"], tags=["System"])
+async def ping():
+    """Ultra-light keep-alive probe (no DB / disk access).
+
+    Hit by uptime monitors (UptimeRobot, cron-job.org, GitHub Actions) every
+    ~10 min so Render's free tier doesn't spin the service down. HEAD is
+    supported because UptimeRobot's free plan probes with HEAD.
+    """
+    return {"status": "ok"}
+
+
 @app.get("/api/health", tags=["System"])
 async def health_check():
     """Real-time microservice health check."""

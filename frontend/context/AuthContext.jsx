@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect } from 'react';
-import API from '../utils/api';
+import API, { warmUpBackend } from '../utils/api';
 
 const AuthContext = createContext();
 
@@ -11,6 +11,7 @@ export const AuthProvider = ({ children }) => {
 
     // Initial client-side authentication hydration
     useEffect(() => {
+        warmUpBackend();
         try {
             const saved = localStorage.getItem('agentic_user');
             if (saved && saved !== 'null' && saved !== 'undefined') {

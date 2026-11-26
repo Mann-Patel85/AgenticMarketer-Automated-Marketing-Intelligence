@@ -371,3 +371,14 @@ EDEN_AI_API_KEY=
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
+
+## ⏰ Keeping the Render Backend Awake (Free Tier)
+
+Render's free tier spins the backend down after 15 minutes of inactivity, and the next request then waits 50s–2min for a cold start. To avoid that:
+
+1. **Ping endpoint**: `GET`/`HEAD` `https://<your-service>.onrender.com/ping` (also `/api/ping`) returns `{"status":"ok"}` without touching the database or disk.
+2. **Uptime monitor (primary)**: create a free HTTP(s) monitor on [UptimeRobot](https://uptimerobot.com) or [cron-job.org](https://cron-job.org) pointing at `/ping` with a 10-minute interval.
+3. **GitHub Actions (backup)**: `.github/workflows/keep-alive.yml` pings every 10 minutes. Add a repository secret `RENDER_BACKEND_URL` (e.g. `https://<your-service>.onrender.com`) to enable it.
+4. **Frontend warm-up**: the Vercel app sends a `/ping` on load, so even if the backend is asleep it starts booting before the user does anything.
+
+> Render gives 750 free instance hours/month per workspace. One always-on service uses ~744h, so keep only **one** free web service awake per account.
