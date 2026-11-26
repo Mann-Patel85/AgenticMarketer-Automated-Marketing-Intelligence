@@ -166,7 +166,7 @@ export default function AdminPage() {
                         {health && (
                             <div className="flex items-center gap-2 px-3.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-xs text-emerald-400">
                                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                                <span className="font-semibold">{health.active_agents || 6} Swarm Nodes Online</span>
+                                <span className="font-semibold">{health.active_agents || 7} Swarm Nodes Online</span>
                                 <span className="text-slate-600">•</span>
                                 <span className="font-mono text-xs">v{health.version || '2.0.0'}</span>
                             </div>
@@ -258,7 +258,7 @@ export default function AdminPage() {
                             <div>
                                 <p className="text-xs text-slate-400">Active Agents</p>
                                 <h3 className="text-xl font-extrabold text-white mt-1">
-                                    {health?.active_agents || 6} Swarm Nodes
+                                    {health?.active_agents || 7} Swarm Nodes
                                 </h3>
                                 <span className="text-xs text-emerald-400 font-medium">All Pipelines Operational</span>
                             </div>

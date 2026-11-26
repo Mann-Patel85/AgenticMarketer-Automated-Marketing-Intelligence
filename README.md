@@ -7,7 +7,7 @@
 [![Cloudflare AI](https://img.shields.io/badge/Image%20Diffusion-Cloudflare%20FLUX.1-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers-ai/)
 [![PostgreSQL](https://img.shields.io/badge/Database-Neon%20PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://neon.tech/)
 
-**AgenticMarketer** is an AI marketing platform that runs a coordinated **6-agent swarm**: it grounds campaigns in your own brand documents, gathers live market context, writes multi-channel copy with Groq LPUs, generates visuals with Cloudflare FLUX.1, audits SEO and readability, and publishes to the channels you choose.
+**AgenticMarketer** is an AI marketing platform that runs a coordinated **7-agent swarm**: it grounds campaigns in your own brand documents, gathers live market context, writes multi-channel copy with Groq LPUs, **fact-checks every claim against your sources**, generates visuals with Cloudflare FLUX.1, audits SEO and readability, and publishes to the channels you choose.
 
 **Live app:** https://agentic-marketer-automated-marketin.vercel.app
 
@@ -17,7 +17,7 @@
 
 - [Core System Overview](#-core-system-overview)
 - [System Architecture](#-system-architecture)
-- [6-Agent Swarm Pipeline](#-6-agent-swarm-pipeline)
+- [7-Agent Swarm Pipeline](#-7-agent-swarm-pipeline)
 - [Tech Stack](#-tech-stack)
 - [Frontend Pages](#-frontend-pages)
 - [Security & Data Privacy](#-security--data-privacy)
@@ -39,9 +39,10 @@ Marketing work is usually split across research tools, copywriting assistants, d
 1. **Private brand grounding (RAG):** each user uploads brand playbooks, battlecards and guidelines (`.pdf`, `.docx`, `.txt`, `.md`, and images) into their **own private knowledge base**, searched with TF-IDF cosine retrieval and stop-word penalty scoring.
 2. **Live market context:** pulls recent headlines from Google News RSS and background facts from Wikipedia to inform messaging.
 3. **High-throughput copywriting:** Groq LPUs (`openai/gpt-oss-120b`, with `openai/gpt-oss-20b` as the fast model) write multi-channel bundles: hooks, LinkedIn posts, X threads, Reddit discussions, blog articles, cold emails and Meta ad variants.
-4. **Visual generation:** Cloudflare Workers AI renders 1024×1024 banners with `@cf/black-forest-labs/flux-1-schnell`, with automatic fallbacks and an image clarity score.
-5. **SEO & readability auditing:** Flesch-Kincaid readability (Grade 8 target), keyword density and search-intent checks, plus a live technical site auditor.
-6. **Omnichannel publishing:** broadcasts approved campaigns to LinkedIn, X, Facebook, Instagram, Threads, Reddit, Medium, Dev.to, WordPress, Discord, Slack and custom webhooks, with a saved audit history.
+4. **Fact-checking:** a dedicated agent cross-checks every factual claim in the copy against your documents, the research sources and your own directive, corrects or removes anything that contradicts them or isn't backed by them, and flags the rest for review.
+5. **Visual generation:** Cloudflare Workers AI renders 1024×1024 banners with `@cf/black-forest-labs/flux-1-schnell`, with automatic fallbacks and an image clarity score.
+6. **SEO & readability auditing:** Flesch-Kincaid readability (Grade 8 target), keyword density and search-intent checks, plus a live technical site auditor.
+7. **Omnichannel publishing:** broadcasts approved campaigns to LinkedIn, X, Facebook, Instagram, Threads, Reddit, Medium, Dev.to, WordPress, Discord, Slack and custom webhooks, with a saved audit history.
 
 ---
 
@@ -78,7 +79,7 @@ AgenticMarketer is a decoupled full-stack application:
 
 ---
 
-## 🤖 6-Agent Swarm Pipeline
+## 🤖 7-Agent Swarm Pipeline
 
 When you launch a campaign, the agents run in sequence:
 
@@ -86,18 +87,27 @@ When you launch a campaign, the agents run in sequence:
 ┌────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
 │ 1. Ingestion Agent     │ ───▶  │ 2. Research Agent      │ ───▶  │ 3. Copywriter Agent    │
 │ • Your private KB      │       │ • Google News RSS      │       │ • Groq LPU Copy Engine │
-│ • Brand disambiguation │       │ • Wikipedia context    │       │ • Multi-Channel Copy   │
-└────────────────────────┘       └────────────────────────┘       └───────────┬────────────┘
-                                                                              │
-┌────────────────────────┐       ┌────────────────────────┐                   │
-│ 6. Social Publisher    │ ◀───  │ 5. SEO & Analytics     │ ◀─────────────────┤
-│ • Omnichannel manifest │       │ • Flesch-Kincaid Grade │                   │
-│ • Platform formatting  │       │ • Keyword Density      │                   ▼
-└────────────────────────┘       └────────────────────────┘       ┌────────────────────────┐
-                                                                  │ 4. Image Gen Agent     │
-                                                                  │ • Cloudflare FLUX.1    │
-                                                                  │ • 1024×1024 PNG Banner │
-                                                                  └────────────────────────┘
+│ • Brand disambiguation │       │ • Wikipedia context    │       │ • Facts only from      │
+│                        │       │ • Numbered sources     │       │   provided material    │
+└───────────┬────────────┘       └───────────┬────────────┘       └───────────┬────────────┘
+            │      evidence                  │      evidence                  │ draft copy
+            └───────────────┐                │                ┌───────────────┘
+                            ▼                ▼                ▼
+                    ┌──────────────────────────────────────────────┐
+                    │ 4. Fact-Check Agent                          │
+                    │ • Extracts every checkable claim             │
+                    │ • Supported / contradicted / unsupported     │
+                    │ • Corrects from evidence, flags the rest     │
+                    │ • Statistics check (works without the AI)    │
+                    └───────────────────────┬──────────────────────┘
+                                            │ verified copy
+            ┌───────────────────────────────┼───────────────────────────────┐
+            ▼                               ▼                               ▼
+┌────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
+│ 5. Image Gen Agent     │       │ 6. SEO & Analytics     │       │ 7. Social Publisher    │
+│ • Cloudflare FLUX.1    │       │ • Flesch-Kincaid Grade │       │ • Omnichannel manifest │
+│ • 1024×1024 PNG Banner │       │ • Keyword Density      │       │ • Platform formatting  │
+└────────────────────────┘       └────────────────────────┘       └────────────────────────┘
 ```
 
 ### Agent roles
@@ -107,17 +117,20 @@ When you launch a campaign, the agents run in sequence:
    - **Function:** retrieves the most relevant passages from **the signed-in user's own documents** only. It can auto-detect the matching brand playbook, use one you select, or run with no grounding.
 2. **Market Research Agent**
    - **Engine:** Google News RSS and the Wikipedia API.
-   - **Function:** collects recent headlines and background context about the campaign topic to ground messaging.
+   - **Function:** collects recent headlines and background context, numbers each source so it can be cited, and adds a short AI analysis that is restricted to those sources (it is never allowed to invent statistics or events).
 3. **Copywriter Agent**
    - **Engine:** Groq Cloud LPUs (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`), with xAI Grok as an optional fallback.
-   - **Function:** writes channel-ready copy: hooks, LinkedIn, X, Reddit, blog, cold email and Meta ads.
-4. **Image Generation Agent**
+   - **Function:** writes channel-ready copy: hooks, LinkedIn, X, Reddit, blog, cold email and Meta ads. Statistics, features, prices, customers and claims may only come from your documents, the research sources or your goal.
+4. **Fact-Check Agent**
+   - **Engine:** Groq (temperature 0 for verification) plus a deterministic statistics checker.
+   - **Function:** builds an evidence pack (your directive, your documents and brief, and the numbered research sources), extracts every checkable claim in the draft, and labels each one *supported*, *contradicted* or *unsupported* with the source it relies on. Contradicted and unsupported claims are fixed with minimal, sentence-level edits that use only the evidence; anything it can't fix safely stays flagged. Any percentage, multiplier or money figure that appears in no source is flagged even if the AI is unavailable. The result appears in the dashboard's **Fact Check** tab, and a warning banner appears above the copy when something still needs review.
+5. **Image Generation Agent**
    - **Engine:** Cloudflare Workers AI (`@cf/black-forest-labs/flux-1-schnell`). Falls back to Eden AI, then Pollinations, then a stock photo.
    - **Function:** turns the campaign into a photorealistic prompt, renders the banner, and scores image sharpness with Pillow.
-5. **SEO & Analytics Agent**
+6. **SEO & Analytics Agent**
    - **Engine:** `textstat` Flesch-Kincaid scoring and a keyword density auditor.
    - **Function:** checks readability (Grade 8 target), search-intent alignment and keyword distribution.
-6. **Social Publisher Agent**
+7. **Social Publisher Agent**
    - **Engine:** connectors for LinkedIn, X, Facebook, Instagram, Threads, Reddit, Medium, Dev.to, WordPress, Discord, Slack and universal webhooks (Zapier, Make, Buffer).
    - **Function:** adapts copy to each platform's limits and prepares or sends the broadcast. Channels without API credentials run in sandbox mode and return simulated receipts.
 
@@ -152,12 +165,13 @@ When you launch a campaign, the agents run in sequence:
 
 ### 1. Swarm Launcher (`/dashboard`)
 - **Campaign console:** goal input with presets (*SaaS Launch*, *B2B Outbound*, *SEO Authority*), audience and tone, brand-playbook selector, multimodal brief upload, and target channels.
-- **Agent grid:** live cards for all 6 agents showing *Ready*, *Thinking…* or *Complete*. On phones it becomes a swipeable row.
+- **Agent grid:** live cards for all 7 agents showing *Ready*, *Thinking…* or *Complete*. On phones it becomes a swipeable row.
 - **Output workspace:** stays in view while you scroll on desktop.
   - **Clean Studio view:** per-channel tabs with one-click copy.
   - **Raw Markdown view:** full output with download.
   - **Visual Studio:** generated banner, model used, clarity score and PNG download.
   - **Terminal:** step-by-step agent logs for the run.
+  - **Fact Check:** every claim with its verdict (supported, corrected, contradicted, unsupported), what was changed, and links to the evidence used.
   - **SEO & Audit:** readability and keyword metrics.
 - **Omnichannel Broadcast:** choose platforms, schedule or send, and view receipts.
 - **Technical Site Auditor:** crawls a public URL and grades titles, meta descriptions, headings, images, social cards, security headers and links.
@@ -270,7 +284,7 @@ AgenticMarketer-Automated-Marketing-Intelligence/
 ├── backend/                            # FastAPI backend
 │   ├── app/
 │   │   ├── agents/
-│   │   │   └── swarm_pipeline.py       # 6-agent swarm orchestration
+│   │   │   └── swarm_pipeline.py       # 7-agent swarm orchestration
 │   │   ├── core/
 │   │   │   ├── config.py               # Settings & environment loading
 │   │   │   ├── security.py             # Password hashing, JWT, auth dependencies
@@ -422,7 +436,8 @@ Render's free tier spins the backend down after 15 minutes of inactivity, and th
 
 ## 🚀 Capabilities & Roadmap
 
-- [x] **6-agent swarm pipeline:** ingestion, research, copywriting, image generation, SEO and publishing.
+- [x] **7-agent swarm pipeline:** ingestion, research, copywriting, fact-checking, image generation, SEO and publishing.
+- [x] **Anti-hallucination fact-checking:** claims cross-checked against your documents and research, corrected or flagged before you publish.
 - [x] **Groq LPU copywriting** with multi-channel bundles.
 - [x] **Cloudflare FLUX.1 visuals** with fallbacks and clarity scoring.
 - [x] **Private per-user knowledge bases** with TF-IDF retrieval and single-file scoped search.

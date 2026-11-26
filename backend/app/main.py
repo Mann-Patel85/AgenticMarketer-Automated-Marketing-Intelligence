@@ -164,11 +164,12 @@ async def health_check():
     return {
         "status": "healthy",
         "version": settings.APP_VERSION,
-        "active_agents": 6,
+        "active_agents": 7,
         "agents": [
             "Document Ingestion Agent",
             "Market Research Agent",
             "Copywriter & Visual Agent",
+            "Fact-Check Agent",
             f"Image Generation Agent ({settings.effective_image_model})",
             "SEO & Analytics Agent",
             "Social Publisher Agent",
@@ -210,6 +211,6 @@ async def system_telemetry(current_user: dict = Depends(get_current_user)):
         "total_campaign_runs": campaign_runs,
         "active_seats": active_seats,
         "allocated_seats": MAX_OPERATOR_SEATS,
-        "active_agents": 6,
+        "active_agents": 7,
         "system_status": "all_systems_operational",
     }

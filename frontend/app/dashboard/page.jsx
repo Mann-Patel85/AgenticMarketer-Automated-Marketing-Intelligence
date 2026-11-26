@@ -59,8 +59,16 @@ import {
     ArrowUpRight,
     Loader2,
     Paperclip,
+    ShieldCheck,
+    AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const FACT_CHECK_LABELS = {
+    verified: 'Verified against your sources',
+    revised: 'Corrected & verified',
+    needs_review: 'Needs your review',
+};
 
 // Clean text utility: strips markdown artifacts, bold/italic asterisks, hash headers, and blockquotes
 function cleanMarkdownText(text) {
@@ -359,6 +367,7 @@ export default function DashboardPage() {
     const [clarityScore, setClarityScore] = useState(null);
     const [imageAttemptsLog, setImageAttemptsLog] = useState([]);
     const [seoData, setSeoData] = useState(null);
+    const [factCheck, setFactCheck] = useState(null);
     const [contentType, setContentType] = useState('social_bundle'); // 'social_bundle' | 'seo_article' | 'landing_page'
     const [seoBrief, setSeoBrief] = useState(null);
 
@@ -638,6 +647,16 @@ export default function DashboardPage() {
             description: 'Synthesizes high-converting copy angles and campaign bundles with Groq LPUs at maximum throughput.',
         },
         {
+            id: 'fact_check',
+            name: 'Fact-Check Agent',
+            role: 'Cross-Verification & Correction',
+            icon: ShieldCheck,
+            color: 'from-sky-500 to-blue-600',
+            borderColor: 'border-sky-500/30',
+            textColor: 'text-sky-400',
+            description: 'Checks every claim against your documents, the research sources and your directive, then fixes or flags it.',
+        },
+        {
             id: 'image_gen',
             name: 'Image Generation Agent',
             role: 'FLUX & Canvas Multimodal',
@@ -715,6 +734,7 @@ export default function DashboardPage() {
         if (ws.clarityScore !== undefined && ws.clarityScore !== null) setClarityScore(ws.clarityScore);
         if (Array.isArray(ws.imageAttemptsLog) && ws.imageAttemptsLog.length > 0) setImageAttemptsLog(ws.imageAttemptsLog);
         if (ws.seoData) setSeoData(ws.seoData);
+        if (ws.factCheck) setFactCheck(ws.factCheck);
         if (ws.seoBrief) setSeoBrief(ws.seoBrief);
         if (Array.isArray(ws.executionLogs) && ws.executionLogs.length > 0) setExecutionLogs(ws.executionLogs);
         if (ws.publishPlatforms && typeof ws.publishPlatforms === 'object') setPublishPlatforms(ws.publishPlatforms);
@@ -781,6 +801,7 @@ export default function DashboardPage() {
             imageAttemptsLog,
             seoData,
             seoBrief,
+            factCheck,
             executionLogs,
             publishPlatforms,
             publishedChannels,
@@ -901,6 +922,7 @@ export default function DashboardPage() {
         setBrandImagePrompt('');
         setImageModelUsed('');
         setSeoData(null);
+        setFactCheck(null);
         setActiveOutputTab('output');
         setPublishSuccess(false);
         setSwarmError(null);
@@ -914,7 +936,7 @@ export default function DashboardPage() {
                 : `Grounded to brand playbook: "${selectedBrandPlaybook}"`;
 
         setExecutionLogs([
-            { id: 1, time: timestamp(), agent: 'System', text: 'Initializing 6-Agent Autonomous Swarm Orchestrator...' },
+            { id: 1, time: timestamp(), agent: 'System', text: 'Initializing 7-Agent Autonomous Swarm Orchestrator...' },
             { id: 2, time: timestamp(), agent: 'Ingestion Agent', text: attachedBrief ? `Multimodal brief (${attachedBrief.filename}) parsed. ${playbookLabel}` : playbookLabel },
         ]);
 
@@ -926,6 +948,7 @@ export default function DashboardPage() {
             else if (step === 2) setActiveAgentIndex(2);
             else if (step === 3) setActiveAgentIndex(3);
             else if (step === 4) setActiveAgentIndex(4);
+            else if (step === 5) setActiveAgentIndex(5);
         }, 1400);
 
         try {
@@ -946,7 +969,7 @@ export default function DashboardPage() {
 
             clearInterval(progressTimer);
             setProgress(100);
-            setActiveAgentIndex(5);
+            setActiveAgentIndex(6);
 
             const bundle = result?.result || result || {};
 
@@ -972,6 +995,7 @@ export default function DashboardPage() {
             if (bundle.seo_metrics) {
                 setSeoData(bundle.seo_metrics);
             }
+            setFactCheck(bundle.fact_check || null);
             if (bundle.seo_brief) {
                 setSeoBrief(bundle.seo_brief);
             }
@@ -1002,8 +1026,9 @@ export default function DashboardPage() {
                     { id: Date.now() + 1, time: timestamp(), agent: 'Copywriter Agent', text: 'Synthesized multi-channel copy & creative visual prompts via Groq LPU.' },
                     { id: Date.now() + 2, time: timestamp(), agent: 'Image Generation Agent', text: bundle.generated_image_url ? `Campaign visual generated: ${bundle.generated_image_url}` : 'Visual asset formatted.' },
                     { id: Date.now() + 3, time: timestamp(), agent: 'SEO & Analytics Agent', text: `Readability score: ${bundle.seo_metrics?.readability_score || 85}/100 | Intent Match: ${bundle.seo_metrics?.intent_match || '90%'}` },
+                    { id: Date.now() + 6, time: timestamp(), agent: 'Fact-Check Agent', text: bundle.fact_check?.summary || 'Claims cross-checked against your sources.' },
                     { id: Date.now() + 4, time: timestamp(), agent: 'Social Publisher Agent', text: `Formatted ${bundle.publishing_manifests?.length || 4} omnichannel channel payloads.` },
-                    { id: Date.now() + 5, time: timestamp(), agent: 'System', text: `✅ Complete 6-agent swarm pipeline finished with consensus! Run ID: ${runId}` },
+                    { id: Date.now() + 5, time: timestamp(), agent: 'System', text: `✅ 7-agent swarm pipeline finished. Run ID: ${runId}` },
                 ]);
             }
 
@@ -1062,6 +1087,7 @@ export default function DashboardPage() {
                 imageAttemptsLog: bundle.image_attempts_log || [],
                 seoData: bundle.seo_metrics || null,
                 seoBrief: bundle.seo_brief || null,
+                factCheck: bundle.fact_check || null,
             });
 
         } catch (err) {
@@ -1105,6 +1131,7 @@ export default function DashboardPage() {
         setClarityScore(null);
         setImageAttemptsLog([]);
         setSeoData(null);
+        setFactCheck(null);
         setAutoPublishResult(null);
         setExecutionLogs([]);
         setPublishSuccess(false);
@@ -1233,7 +1260,7 @@ export default function DashboardPage() {
                                 </h1>
                                 <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1 whitespace-nowrap shrink-0">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                    6 Nodes Active
+                                    7 Agents Ready
                                 </span>
                             </div>
                             <p className="text-xs text-slate-400 mt-1 max-w-2xl">
@@ -1303,13 +1330,13 @@ export default function DashboardPage() {
 
                 {/* Main Content Layout */}
                 <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-                    {/* 6-Agent Swarm Topology Grid */}
+                    {/* 7-Agent Swarm Topology Grid */}
                     <section>
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                                 <Cpu className="w-4 h-4 text-indigo-400" />
                                 <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
-                                    6-Agent Swarm Topology Pipeline
+                                    7-Agent Swarm Topology Pipeline
                                 </h2>
                             </div>
                             <span className="text-xs font-mono text-slate-500">
@@ -1317,7 +1344,7 @@ export default function DashboardPage() {
                             </span>
                         </div>
 
-                        <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0 sm:overflow-visible sm:grid sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+                        <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0 sm:overflow-visible sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
                             {agents.map((agent, index) => {
                                 const IconComponent = agent.icon;
                                 const isActive = isExecuting && activeAgentIndex === index;
@@ -1902,7 +1929,7 @@ export default function DashboardPage() {
 
                                     {autoPublish && (
                                         <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-2.5 py-1 font-mono">
-                                            ⚡ <strong>Auto-Publish Armed:</strong> Once the 6-agent swarm finishes, it will broadcast copy and creatives to your checked channels.
+                                            ⚡ <strong>Auto-Publish Armed:</strong> Once the 7-agent swarm finishes, it will broadcast copy and creatives to your checked channels.
                                         </p>
                                     )}
                                 </div>
@@ -1927,12 +1954,12 @@ export default function DashboardPage() {
                                         ) : (
                                             <>
                                                 <Play className="w-4 h-4 fill-white" />
-                                                <span>Launch 6-Agent Swarm</span>
+                                                <span>Launch 7-Agent Swarm</span>
                                             </>
                                         )}
                                     </button>
                                     <p className="text-xs text-slate-500 text-center mt-2 font-mono">
-                                        Coordinates Ingestion, Market Research, Copywriter, Image Gen, SEO Audit, and Social Publisher.
+                                        Coordinates Ingestion, Market Research, Copywriter, Fact-Check, Image Gen, SEO Audit, and Social Publisher.
                                     </p>
                                 </div>
                             </div>
@@ -2126,6 +2153,22 @@ export default function DashboardPage() {
 
                                         <button
                                             type="button"
+                                            onClick={() => setActiveOutputTab('factcheck')}
+                                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
+                                                activeOutputTab === 'factcheck'
+                                                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                                                    : 'text-slate-400 hover:text-slate-200'
+                                            }`}
+                                        >
+                                            <ShieldCheck className="w-3.5 h-3.5" />
+                                            <span>Fact Check</span>
+                                            {factCheck && (
+                                                <span className={`w-2 h-2 rounded-full ${factCheck.status === 'needs_review' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                                            )}
+                                        </button>
+
+                                        <button
+                                            type="button"
                                             onClick={() => setActiveOutputTab('seo')}
                                             className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
                                                 activeOutputTab === 'seo'
@@ -2181,6 +2224,16 @@ export default function DashboardPage() {
                                     {/* TAB 1: Campaign Copy Output */}
                                     {activeOutputTab === 'output' && (
                                         <div className="flex-1 flex flex-col">
+                                            {generatedOutput && factCheck?.status === 'needs_review' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setActiveOutputTab('factcheck')}
+                                                    className="mx-4 mt-4 px-3 py-2 rounded-xl text-left text-xs text-amber-200 bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 hover:bg-amber-500/15 transition cursor-pointer"
+                                                >
+                                                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                                                    <span>{factCheck.issues_remaining} claim(s) aren&apos;t backed by your sources. Review them in the Fact Check tab before publishing.</span>
+                                                </button>
+                                            )}
                                             {!generatedOutput && !isExecuting ? (
                                                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-500 space-y-3">
                                                     <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800">
@@ -2192,7 +2245,7 @@ export default function DashboardPage() {
                                                         </h3>
                                                         <p className="text-xs text-slate-500 mt-1">
                                                             Set campaign directive on the left, then click{' '}
-                                                            <strong className="text-slate-300">Launch 6-Agent Swarm</strong> to synthesize multi-channel copy, visuals, and SEO audits.
+                                                            <strong className="text-slate-300">Launch 7-Agent Swarm</strong> to synthesize multi-channel copy, visuals, and SEO audits.
                                                         </p>
                                                     </div>
                                                 </div>
@@ -3334,7 +3387,7 @@ export default function DashboardPage() {
                                                 <div className="text-center py-16 bg-slate-950/60 border border-slate-800 rounded-2xl space-y-2">
                                                     <ImageIcon className="w-10 h-10 text-slate-600 mx-auto" />
                                                     <p className="text-xs font-medium text-slate-400">No campaign visual generated yet.</p>
-                                                    <p className="text-xs text-slate-600">Click "Launch 6-Agent Swarm" to generate copy and visuals automatically.</p>
+                                                    <p className="text-xs text-slate-600">Click "Launch 7-Agent Swarm" to generate copy and visuals automatically.</p>
                                                 </div>
                                             )}
                                         </div>
@@ -3383,6 +3436,121 @@ export default function DashboardPage() {
                                             <div ref={terminalBottomRef} />
                                         </div>
                                     )}
+
+                                     {/* TAB: Fact Check (cross-verification against your sources) */}
+                                     {activeOutputTab === 'factcheck' && (
+                                         <div className="space-y-4">
+                                             {!factCheck ? (
+                                                 <div className="p-8 text-center text-sm text-slate-400 border border-dashed border-slate-800 rounded-2xl">
+                                                     Run a campaign to see the Fact-Check Agent&apos;s verification report.
+                                                 </div>
+                                             ) : (
+                                                 <>
+                                                     <div className={`p-5 rounded-2xl border flex flex-col gap-4 ${
+                                                         factCheck.status === 'needs_review'
+                                                             ? 'bg-amber-500/10 border-amber-500/30'
+                                                             : 'bg-emerald-500/10 border-emerald-500/30'
+                                                     }`}>
+                                                         <div className="flex items-start gap-3">
+                                                             {factCheck.status === 'needs_review' ? (
+                                                                 <AlertTriangle className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" />
+                                                             ) : (
+                                                                 <ShieldCheck className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
+                                                             )}
+                                                             <div>
+                                                                 <div className={`text-sm font-bold ${factCheck.status === 'needs_review' ? 'text-amber-300' : 'text-emerald-300'}`}>
+                                                                     {FACT_CHECK_LABELS[factCheck.status] || 'Checked'}
+                                                                 </div>
+                                                                 <p className="text-sm text-slate-300 mt-1">{factCheck.summary}</p>
+                                                                 {factCheck.mode === 'heuristic' && (
+                                                                     <p className="text-xs text-slate-400 mt-1">AI verification was unavailable for this run, so only statistics were checked.</p>
+                                                                 )}
+                                                             </div>
+                                                         </div>
+                                                         <div className="flex flex-wrap gap-2 shrink-0 font-mono text-xs">
+                                                             <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">{factCheck.counts?.supported ?? 0} supported</span>
+                                                             {(factCheck.counts?.corrected ?? 0) > 0 && (
+                                                                 <span className="px-2.5 py-1 rounded-lg bg-sky-500/15 text-sky-300 border border-sky-500/30">{factCheck.counts.corrected} corrected</span>
+                                                             )}
+                                                             <span className="px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-500/30">{factCheck.counts?.contradicted ?? 0} contradicted</span>
+                                                             <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30">{factCheck.counts?.unsupported ?? 0} unsupported</span>
+                                                         </div>
+                                                     </div>
+
+                                                     {factCheck.revised && (
+                                                         <p className="text-xs text-sky-300 bg-sky-500/10 border border-sky-500/20 rounded-xl px-3 py-2">
+                                                             The copy you see was automatically corrected: {factCheck.issues_found} claim(s) that contradicted or weren&apos;t backed by your sources were fixed or removed before the copy reached you.
+                                                         </p>
+                                                     )}
+
+                                                     {factCheck.unverified_stats?.length > 0 && (
+                                                         <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/5">
+                                                             <div className="text-xs font-semibold text-amber-300 mb-2">Statistics not found in any source</div>
+                                                             <div className="flex flex-wrap gap-2">
+                                                                 {factCheck.unverified_stats.map((s) => (
+                                                                     <span key={s} className="px-2 py-0.5 rounded-md font-mono text-xs bg-amber-500/15 text-amber-200 border border-amber-500/30">{s}</span>
+                                                                 ))}
+                                                             </div>
+                                                         </div>
+                                                     )}
+
+                                                     <div className="space-y-2">
+                                                         <div className="text-xs font-mono uppercase tracking-wider text-slate-400">Claims checked ({factCheck.claims?.length || 0})</div>
+                                                         {(factCheck.claims || []).length === 0 && (
+                                                             <p className="text-sm text-slate-400">No specific factual claims were found in the copy.</p>
+                                                         )}
+                                                         {(factCheck.claims || []).map((c, i) => (
+                                                             <div key={i} className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex items-start gap-3">
+                                                                 <span className={`shrink-0 px-2 py-0.5 rounded-md text-xs font-semibold border ${
+                                                                     c.verdict === 'supported'
+                                                                         ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                                                         : c.verdict === 'corrected'
+                                                                             ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                                                                         : c.verdict === 'contradicted'
+                                                                             ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                                                                             : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                                                 }`}>
+                                                                     {c.verdict}
+                                                                 </span>
+                                                                 <div className="min-w-0 text-sm">
+                                                                     <p className="text-slate-200">{c.claim}</p>
+                                                                     {c.verdict === 'corrected' && (
+                                                                         <p className="text-xs text-sky-300/90 mt-1">
+                                                                             {c.original_verdict === 'contradicted' ? 'Contradicted your sources' : 'Not backed by your sources'} — {c.fixed_to === '(removed)' ? 'removed from the copy.' : <>changed to: &ldquo;{c.fixed_to}&rdquo;</>}
+                                                                         </p>
+                                                                     )}
+                                                                     {c.verdict !== 'corrected' && c.correction && <p className="text-xs text-slate-400 mt-1">Correct fact: {c.correction}</p>}
+                                                                     {c.sources?.length > 0 && (
+                                                                         <p className="text-xs text-slate-500 mt-1">Source: {c.sources.join(', ')}</p>
+                                                                     )}
+                                                                 </div>
+                                                             </div>
+                                                         ))}
+                                                     </div>
+
+                                                     {factCheck.sources?.length > 0 && (
+                                                         <div className="space-y-2">
+                                                             <div className="text-xs font-mono uppercase tracking-wider text-slate-400">Evidence used</div>
+                                                             <ul className="space-y-1.5">
+                                                                 {factCheck.sources.map((s) => (
+                                                                     <li key={s.id} className="text-xs text-slate-400 flex items-start gap-2">
+                                                                         <span className="font-mono text-indigo-300 shrink-0">[{s.id}]</span>
+                                                                         {s.link ? (
+                                                                             <a href={s.link} target="_blank" rel="noopener noreferrer" className="hover:text-slate-200 hover:underline inline-flex items-center gap-1">
+                                                                                 {s.title} <ExternalLink className="w-3 h-3" />
+                                                                             </a>
+                                                                         ) : (
+                                                                             <span>{s.title}</span>
+                                                                         )}
+                                                                     </li>
+                                                                 ))}
+                                                             </ul>
+                                                         </div>
+                                                     )}
+                                                 </>
+                                             )}
+                                         </div>
+                                     )}
 
                                      {/* TAB 4: SEO & Readability Insights */}
                                      {activeOutputTab === 'seo' && (

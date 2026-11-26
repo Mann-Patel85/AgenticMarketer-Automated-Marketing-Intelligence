@@ -39,6 +39,9 @@ class WorkspaceSaveRequest(BaseModel):
     clarityScore: Optional[float] = None
     imageAttemptsLog: Optional[List[Any]] = []
     seoData: Optional[Dict[str, Any]] = None
+    seoBrief: Optional[Dict[str, Any]] = None
+    factCheck: Optional[Dict[str, Any]] = None
+    selectedBrandPlaybook: Optional[str] = None
     autoPublish: Optional[bool] = False
     executionLogs: Optional[List[Any]] = []
     publishPlatforms: Optional[Dict[str, bool]] = None
