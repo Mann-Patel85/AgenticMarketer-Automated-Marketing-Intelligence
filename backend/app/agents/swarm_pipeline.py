@@ -1004,9 +1004,16 @@ COPY TO CHECK:
 
 TASK:
 1. List every specific, checkable factual claim in the COPY: statistics, percentages, multipliers, money amounts,
-   prices, dates, rankings, named studies/reports/sources, named customers or partners, awards, product features,
-   specifications, and factual statements about the brand or market. Skip opinions, generic benefits, slogans,
-   calls to action, questions, hashtags and the visual/image prompt section.
+   prices, dates, rankings, named studies/reports/sources, named customers or partners, awards, certifications,
+   concrete product features or specifications (e.g. "has a 15-hour battery", "integrates with Slack", "SOC 2
+   certified"), and concrete factual statements about the brand or market.
+   A claim is checkable only if a document could clearly confirm or refute it.
+   DO NOT list (these are not factual claims):
+   - subjective or aspirational positioning and benefit framing without a concrete, verifiable detail
+     (e.g. "engineered to remove friction", "a unified, high-performance platform", "scales with your team",
+     "built for modern teams", "the smarter way to work");
+   - opinions, slogans, calls to action, questions and hashtags;
+   - descriptions of imagery, scenes, photos or "visual reference" lines, and the visual/image prompt section.
 2. Give each claim a verdict:
    - "supported": the evidence clearly states it. List the supporting ids.
    - "contradicted": the evidence states something different. List the ids and give the correct fact.
