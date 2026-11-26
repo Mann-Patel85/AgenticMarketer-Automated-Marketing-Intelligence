@@ -26,8 +26,10 @@ export default function Navbar() {
         },
     ];
 
-    // Hide navbar on auth pages
-    if (pathname === '/login' || pathname === '/register') {
+    // Hide navbar on auth pages, and on the public legal pages for logged-out visitors
+    // (they have their own "Back to AgenticMarketer" link).
+    const isLegalPage = pathname === '/terms' || pathname === '/privacy';
+    if (pathname === '/login' || pathname === '/register' || (isLegalPage && !user)) {
         return null;
     }
 

@@ -38,7 +38,7 @@ function RegisterContent() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    const [agreeTerms, setAgreeTerms] = useState(true);
+    const [agreeTerms, setAgreeTerms] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -380,8 +380,8 @@ function RegisterContent() {
                             />
                             <span>
                                 I agree to the{' '}
-                                <span className="text-indigo-400 hover:underline">Terms of Service</span> and{' '}
-                                <span className="text-indigo-400 hover:underline">Privacy Policy</span>.
+                                <Link href="/terms" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Terms of Service</Link> and{' '}
+                                <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Privacy Policy</Link>.
                             </span>
                         </label>
                     </div>

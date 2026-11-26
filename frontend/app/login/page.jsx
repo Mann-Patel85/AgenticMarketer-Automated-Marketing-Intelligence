@@ -463,6 +463,11 @@ function LoginContent() {
                         <ArrowRight className="w-3 h-3 inline" />
                     </Link>
                 </p>
+                <p className="text-center text-xs text-slate-500 mt-4">
+                    <Link href="/terms" className="hover:text-slate-300">Terms</Link>
+                    <span className="mx-2">·</span>
+                    <Link href="/privacy" className="hover:text-slate-300">Privacy</Link>
+                </p>
             </motion.div>
 
             {/* Modal: Forgot Password */}
