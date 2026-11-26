@@ -8,13 +8,17 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
+
+from backend.app.core.security import get_current_user
 
 from backend.app.core.config import get_settings
 from backend.app.rag.vector_store import rag_store
 from backend.app.services.rag_prompts import sanitize_rag_markdown
 
-router = APIRouter(prefix="/api/rag", tags=["Knowledge Base & RAG"])
+router = APIRouter(prefix="/api/rag", tags=["Knowledge Base & RAG"],
+    dependencies=[Depends(get_current_user)],  # every endpoint requires a valid login
+)
 
 
 class DocumentResponse(BaseModel):
@@ -26,6 +30,7 @@ class DocumentResponse(BaseModel):
     status: str
     preview: str
     created_at: str
+    uploaded_by: Optional[str] = None
 
 
 class RAGQueryRequest(BaseModel):
@@ -43,7 +48,10 @@ class RAGChunkResponse(BaseModel):
 
 
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Upload and index a grounding document or visual asset (.pdf, .docx, .txt, .md, .png, .jpg, .jpeg, .webp).
     Extracts text and visual OCR/specs, splits into semantic chunks, and persists in vector store.
@@ -58,22 +66,18 @@ async def upload_document(file: UploadFile = File(...)):
             detail=f"Unsupported file type '{ext}'. Allowed extensions: {settings.ALLOWED_EXTENSIONS}",
         )
 
-    # Save to disk
-    uploads_dir = Path(settings.UPLOAD_DIRECTORY)
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    stem = Path(filename).stem
-    target_path = uploads_dir / f"{stem}{ext}"
-
-    # Handle duplicates by appending counter if needed
-    counter = 1
-    while target_path.exists():
-        target_path = uploads_dir / f"{stem}_{counter}{ext}"
-        counter += 1
+    # Save to a uniquely named temp file (never trust the client filename for paths).
+    # The file is only needed for text extraction: the extracted text and chunks are
+    # persisted in the database, so the file is always removed after indexing.
+    tmp_dir = Path(settings.UPLOAD_DIRECTORY) / "rag_tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    target_path = tmp_dir / f"{uuid.uuid4().hex}{ext}"
 
     try:
         with open(target_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
     except Exception as e:
+        target_path.unlink(missing_ok=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save file: {str(e)}",
@@ -82,28 +86,29 @@ async def upload_document(file: UploadFile = File(...)):
         await file.close()
 
     try:
-        doc_meta = rag_store.index_document(target_path, filename)
+        doc_meta = rag_store.index_document(target_path, Path(filename).name, owner=current_user["sub"])
         return DocumentResponse(**doc_meta)
     except Exception as e:
-        if target_path.exists():
-            target_path.unlink()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process and index document: {str(e)}",
         )
+    finally:
+        target_path.unlink(missing_ok=True)
 
 
 @router.get("/documents", response_model=List[DocumentResponse])
-async def list_documents():
-    """List all indexed grounding documents and their chunk statistics."""
-    docs = rag_store.list_documents()
+async def list_documents(current_user: dict = Depends(get_current_user)):
+    """List the current user's own grounding documents and their chunk statistics."""
+    docs = rag_store.list_documents(owner=current_user["sub"])
     return [DocumentResponse(**d) for d in docs]
 
 
 @router.delete("/documents/{doc_id}")
-async def delete_document(doc_id: str):
-    """Delete a document and purge all its chunks from the RAG store."""
-    success = rag_store.delete_document(doc_id)
+async def delete_document(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete one of the current user's documents and purge its chunks.
+    Each knowledge base is private, so other users' documents can't be matched at all."""
+    success = rag_store.delete_document(doc_id, owner=current_user["sub"])
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -119,8 +124,8 @@ class RAGQueryResponse(BaseModel):
 
 
 @router.post("/query", response_model=RAGQueryResponse)
-async def query_knowledge_base(payload: RAGQueryRequest):
-    """Query indexed documents for top semantic grounding chunks and synthesized AI answer."""
+async def query_knowledge_base(payload: RAGQueryRequest, current_user: dict = Depends(get_current_user)):
+    """Query the current user's own documents for grounding chunks and a synthesized AI answer."""
     doc_filter = list(payload.doc_filter) if payload.doc_filter else []
     if payload.filename and payload.filename.strip() and payload.filename != "ALL":
         if payload.filename.strip() not in doc_filter:
@@ -130,6 +135,7 @@ async def query_knowledge_base(payload: RAGQueryRequest):
         payload.query,
         top_k=payload.top_k or 4,
         doc_filter=doc_filter if doc_filter else None,
+        owner=current_user["sub"],
     )
     raw_answer = rag_store.synthesize_answer(payload.query, results)
     clean_answer = sanitize_rag_markdown(raw_answer)
@@ -161,7 +167,8 @@ async def analyze_campaign_brief(file: UploadFile = File(...)):
     temp_dir = Path(settings.UPLOAD_DIRECTORY) / "temp_briefs"
     temp_dir.mkdir(parents=True, exist_ok=True)
     file_id = str(uuid.uuid4())[:8]
-    temp_path = temp_dir / f"{file_id}_{filename}"
+    # Never trust the client filename for paths: keep only a uuid + extension
+    temp_path = temp_dir / f"{file_id}{ext}"
 
     try:
         with open(temp_path, "wb") as buffer:
@@ -181,15 +188,15 @@ async def analyze_campaign_brief(file: UploadFile = File(...)):
         return {
             "success": True,
             "filename": filename,
-            "temp_path": str(temp_path),
             "file_type": "image" if is_image else "document",
             "summary": summary,
             "full_brief_content": extracted_content
         }
     except Exception as e:
-        if temp_path.exists():
-            temp_path.unlink()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to analyze brief: {str(e)}",
         )
+    finally:
+        # Briefs are analyzed once and never needed again: always clean up
+        temp_path.unlink(missing_ok=True)

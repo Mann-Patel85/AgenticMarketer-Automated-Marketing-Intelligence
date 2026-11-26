@@ -213,7 +213,7 @@ export default function AdminPage() {
                             <div>
                                 <p className="text-xs text-slate-400">Groq LPU Quota</p>
                                 <h3 className="text-xl font-extrabold text-white mt-1">
-                                    {stats?.groq_tokens_used ? stats.groq_tokens_used.toLocaleString() : '142,850'}
+                                    {stats?.groq_tokens_used ? stats.groq_tokens_used.toLocaleString() : 'Not tracked'}
                                 </h3>
                                 <span className="text-[10px] text-emerald-400 font-medium">
                                     {health?.groq_api_configured ? 'Active & Blazing Fast' : 'Groq LPU Ready'}

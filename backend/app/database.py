@@ -114,12 +114,14 @@ class GroundingDocument(Base):
     status = Column(String(32), default="ready")
     preview = Column(Text, default="")
     extracted_text = Column(Text, default="")
+    uploaded_by = Column(String(256), nullable=True, index=True)  # email of uploader (None = legacy)
     created_at = Column(String(64), default=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "filename": self.filename,
+            "uploaded_by": self.uploaded_by,
             "size_bytes": int(self.size_bytes),
             "size_formatted": self.size_formatted,
             "chunk_count": int(self.chunk_count),
@@ -151,6 +153,16 @@ class GroundingChunk(Base):
             "vector": self.vector,
             "created_at": self.created_at,
         }
+
+
+class PublishRecord(Base):
+    """Audit trail of omnichannel publishing dispatches (replaces publish_history.json)."""
+    __tablename__ = "publish_records"
+
+    id = Column(String(64), primary_key=True)  # dispatch_id
+    user_email = Column(String(256), index=True, nullable=True)  # None = legacy import
+    record = Column(JSON, default=dict, nullable=False)  # full dispatch record incl. receipts
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
 
 # ── Database Connection & Engine Configuration ───────────────────────
@@ -228,12 +240,48 @@ def get_db() -> Generator[Session, None, None]:
 
 # ── Initialization & Seed Data Migration ─────────────────────────────
 
+def _ensure_column(table: str, column: str, ddl_type: str) -> None:
+    """Lightweight migration: create_all() never adds columns to existing tables,
+    so add any newly introduced nullable column if it's missing."""
+    from sqlalchemy import inspect, text
+
+    existing = {c["name"] for c in inspect(engine).get_columns(table)}
+    if column not in existing:
+        with engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"))
+        print(f"[Database] Migrated: added column {table}.{column}")
+
+
+def _migrate_publish_history_file(db: Session) -> None:
+    """One-time import of the legacy publish_history.json into publish_records."""
+    history_file = Path(__file__).resolve().parents[2] / "data" / "publish_history.json"
+    if not history_file.exists() or db.query(PublishRecord).count() > 0:
+        return
+    try:
+        with open(history_file, "r", encoding="utf-8") as f:
+            records = json.load(f) or []
+        for rec in records:
+            dispatch_id = rec.get("dispatch_id") or f"disp_{uuid.uuid4().hex[:10]}"
+            try:
+                created = datetime.fromisoformat(str(rec.get("created_at")).replace("Z", "+00:00"))
+            except Exception:
+                created = datetime.now(timezone.utc)
+            if not db.get(PublishRecord, dispatch_id):
+                db.add(PublishRecord(id=dispatch_id, user_email=None, record=rec, created_at=created))
+        db.commit()
+        print(f"[Database] Migrated {len(records)} publish records from publish_history.json")
+    except Exception as e:
+        db.rollback()
+        print(f"[Database Warning] Could not migrate publish_history.json: {e}")
+
+
 def init_db():
     """
     Initializes database tables and ensures ONLY the primary Super Admin
     account exists, purging any prototype/demo seed accounts.
     """
     Base.metadata.create_all(bind=engine)
+    _ensure_column("grounding_documents", "uploaded_by", "VARCHAR(256)")
 
     with SessionLocal() as db:
         admin_email = os.getenv("ADMIN_EMAIL", "").lower().strip()
@@ -263,12 +311,15 @@ def init_db():
                 db.commit()
                 print(f"[Database] Provisioned primary Super Admin account: {admin_name} ({admin_email})")
             else:
-                # Guarantee Super Admin role integrity and update credentials if provided in env
+                # Guarantee Super Admin role integrity. The password is only set when the
+                # account is first created (above), so in-app password resets aren't
+                # silently reverted on every restart. Set ADMIN_PASSWORD_RESET_ON_BOOT=true
+                # to force the env password back onto the account (e.g. account recovery).
                 updated = False
                 if admin_user.role != "admin":
                     admin_user.role = "admin"
                     updated = True
-                if admin_password:
+                if os.getenv("ADMIN_PASSWORD_RESET_ON_BOOT", "").lower() in ("1", "true", "yes"):
                     admin_user.password_hash = hash_password(admin_password)
                     updated = True
                 if os.getenv("ADMIN_NAME") and admin_user.name != admin_name:
@@ -276,12 +327,6 @@ def init_db():
                     updated = True
                 if updated:
                     db.commit()
-                updated = True
-            if os.getenv("ADMIN_NAME") and admin_user.name != admin_name:
-                admin_user.name = admin_name
-                updated = True
-            if updated:
-                db.commit()
 
         # Migrate local workspaces.json if found and table is empty
         workspace_count = db.query(Workspace).count()
@@ -303,3 +348,15 @@ def init_db():
                     print(f"[Database] Migrated {len(saved_workspaces)} workspace records from workspaces.json")
                 except Exception as e:
                     print(f"[Database Warning] Could not migrate workspaces.json: {e}")
+
+        _migrate_publish_history_file(db)
+
+        # Knowledge bases are private per user. Documents uploaded before ownership
+        # was tracked have no owner; hand them to the primary Super Admin so they
+        # stay accessible instead of becoming invisible to everyone.
+        if admin_email:
+            orphaned = db.query(GroundingDocument).filter(GroundingDocument.uploaded_by.is_(None))
+            n = orphaned.update({GroundingDocument.uploaded_by: admin_email}, synchronize_session=False)
+            if n:
+                db.commit()
+                print(f"[Database] Assigned {n} legacy knowledge-base document(s) to {admin_email}")

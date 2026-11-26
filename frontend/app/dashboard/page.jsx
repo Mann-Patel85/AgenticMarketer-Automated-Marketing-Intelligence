@@ -417,9 +417,13 @@ export default function DashboardPage() {
         setAuditError(null);
         setAuditResult(null);
         try {
+            const authToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
             const response = await fetch(`${BACKEND_SERVER_URL}/api/seo/audit`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+                },
                 body: JSON.stringify({ url: auditUrl.trim() }),
             });
             if (!response.ok) {

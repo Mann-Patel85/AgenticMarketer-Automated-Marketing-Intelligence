@@ -32,8 +32,10 @@ from backend.app.rag.vector_store import rag_store
 class SwarmPipeline:
     """Coordinates the 5 specialized AI agents with real-time SSE progress streaming."""
 
-    def __init__(self, run_id: str, directives: Dict[str, Any]):
+    def __init__(self, run_id: str, directives: Dict[str, Any], owner_email: str = ""):
         self.run_id = run_id
+        # RAG grounding only ever reads this user's private knowledge base
+        self.owner_email = (owner_email or "").lower().strip()
         self.goal = directives.get("goal", "").strip()
         self.audience = directives.get("audience", "B2B Decision Makers & Marketers").strip()
         self.tone = directives.get("tone", "Authoritative").strip()
@@ -180,7 +182,7 @@ class SwarmPipeline:
         elif playbook_mode != "auto":
             target_doc = Path(self.brand_playbook).name.lower()
             winning_doc = self.brand_playbook
-            raw_chunks = rag_store.query_context(self.goal or "brand visual guidelines style and identity", top_k=5, min_score=0.10, doc_filter=[target_doc])
+            raw_chunks = rag_store.query_context(self.goal or "brand visual guidelines style and identity", top_k=5, min_score=0.10, doc_filter=[target_doc], owner=self.owner_email)
             all_chunks = raw_chunks[:4]
             if all_chunks:
                 grounding_text = "\n\n".join(
@@ -206,7 +208,7 @@ class SwarmPipeline:
                 active_file_filter = [Path(f).name.lower() for f in self.attached_files if f]
 
             # 1. Query top semantic chunks matching campaign goal
-            raw_chunks = rag_store.query_context(self.goal, top_k=6, min_score=0.25, doc_filter=active_file_filter)
+            raw_chunks = rag_store.query_context(self.goal, top_k=6, min_score=0.25, doc_filter=active_file_filter, owner=self.owner_email)
 
             # 2. Score threshold & entity relevance check (Anti-Hallucination Gate)
             verified_chunks = []

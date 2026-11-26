@@ -37,22 +37,54 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 
 
+DEFAULT_FRONTEND_URL = "https://agentic-marketer-automated-marketin.vercel.app"
+
+
+def _origin_of(url: str) -> Optional[str]:
+    """Normalizes a URL to scheme://host[:port], or None if it isn't an http(s) URL."""
+    try:
+        parsed = urllib.parse.urlparse((url or "").strip())
+    except Exception:
+        return None
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}".lower()
+
+
+def _allowed_frontend_origins() -> set:
+    """Frontend origins we are willing to redirect users (and their tokens) back to.
+
+    Configure with FRONTEND_PROD_URL and optionally FRONTEND_ALLOWED_ORIGINS
+    (comma-separated, e.g. preview deployments). Never derived from request data.
+    """
+    candidates = [
+        os.getenv("FRONTEND_PROD_URL", ""),
+        DEFAULT_FRONTEND_URL,
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    candidates += os.getenv("FRONTEND_ALLOWED_ORIGINS", "").split(",")
+    return {o for o in (_origin_of(c) for c in candidates) if o}
+
+
+def _safe_frontend(url: Optional[str]) -> Optional[str]:
+    """Returns the origin of `url` only if it is an allow-listed frontend."""
+    origin = _origin_of(url or "")
+    return origin if origin and origin in _allowed_frontend_origins() else None
+
+
 def _get_frontend_url(request: Request) -> str:
-    """Resolves production or local frontend origin for OAuth redirects."""
-    configured = os.getenv("FRONTEND_PROD_URL", "").strip()
+    """Resolves production or local frontend origin for OAuth redirects (allow-listed only)."""
+    configured = _origin_of(os.getenv("FRONTEND_PROD_URL", ""))
     if configured:
-        parsed = urllib.parse.urlparse(configured)
-        if parsed.scheme and parsed.netloc:
-            return f"{parsed.scheme}://{parsed.netloc}"
-        return configured.rstrip("/")
-    referer = request.headers.get("referer")
-    if referer:
-        parsed = urllib.parse.urlparse(referer)
-        return f"{parsed.scheme}://{parsed.netloc}"
-    origin = request.headers.get("origin")
-    if origin:
-        return origin.rstrip("/")
-    return "https://agentic-marketer-automated-marketin.vercel.app"
+        return configured
+    for header in ("referer", "origin"):
+        safe = _safe_frontend(request.headers.get(header))
+        if safe:
+            return safe
+    return DEFAULT_FRONTEND_URL
 
 
 def _get_backend_url(request: Request) -> str:
@@ -80,6 +112,18 @@ class UserLoginRequest(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     email: str = Field(..., min_length=3, max_length=100)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=10)
+    new_password: str = Field(..., min_length=6)
+
+
+def _password_fingerprint(password_hash: str) -> str:
+    """Short fingerprint of the current password hash. Embedding it in reset tokens
+    makes each reset link single-use: once the password changes, old links stop working."""
+    import hashlib
+    return hashlib.sha256((password_hash or "").encode("utf-8")).hexdigest()[:16]
 
 
 class UserProfileResponse(BaseModel):
@@ -240,7 +284,11 @@ async def forgot_password(
     user = db.query(User).filter(User.email == email_key).first()
     if user:
         reset_token = create_access_token(
-            {"sub": email_key, "purpose": "password_reset"},
+            {
+                "sub": email_key,
+                "purpose": "password_reset",
+                "pwh": _password_fingerprint(user.password_hash),
+            },
             expires_delta=timedelta(hours=1),
         )
         reset_url = f"{frontend_url}/login?reset_token={reset_token}"
@@ -250,6 +298,30 @@ async def forgot_password(
         "message": f"If an account exists for {email_key}, password recovery instructions have been dispatched.",
         "status": "dispatched",
     }
+
+
+@router.post("/reset-password")
+async def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Sets a new password using the single-use token from the reset email."""
+    invalid = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="This password reset link is invalid or has expired. Please request a new one.",
+    )
+    try:
+        claims = decode_access_token(payload.token)
+    except HTTPException:
+        raise invalid
+
+    if claims.get("purpose") != "password_reset" or not claims.get("sub"):
+        raise invalid
+
+    user = db.query(User).filter(User.email == str(claims["sub"]).lower().strip()).first()
+    if not user or claims.get("pwh") != _password_fingerprint(user.password_hash):
+        raise invalid
+
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"status": "success", "message": "Password updated. You can now sign in with your new password."}
 
 
 # ── Google OAuth 2.0 Integration ─────────────────────────────────────
@@ -268,7 +340,8 @@ async def google_login(request: Request):
     backend_url = _get_backend_url(request)
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI") or f"{backend_url}/api/auth/google/callback"
 
-    # Encode client frontend origin into state so callback always returns to the right domain
+    # Encode client frontend origin into state so callback always returns to the right domain.
+    # (The callback re-validates it against the allow-list, since state is attacker-controllable.)
     state_payload = {
         "nonce": str(uuid.uuid4())[:8],
         "frontend": frontend_url,
@@ -311,8 +384,11 @@ async def google_callback(
     if state:
         try:
             state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
-            if state_data.get("frontend"):
-                frontend_url = state_data["frontend"].rstrip("/")
+            # Only honour allow-listed origins: otherwise a crafted Google sign-in link
+            # could make us hand the victim's JWT to an attacker-controlled domain.
+            safe = _safe_frontend(state_data.get("frontend"))
+            if safe:
+                frontend_url = safe
         except Exception:
             pass
 
@@ -428,27 +504,14 @@ async def google_callback(
 # ── Profile & Users Queries ──────────────────────────────────────────
 
 @router.get("/me", response_model=UserProfileResponse)
-async def get_me(
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Retrieve profile and permissions for the current authenticated user."""
-    email = current_user.get("sub", "").lower().strip()
-    user = db.query(User).filter(User.email == email).first()
-
-    if not user:
-        return UserProfileResponse(
-            id=current_user.get("uid", str(uuid.uuid4())),
-            name=current_user.get("name", "User"),
-            email=email,
-            role=current_user.get("role", "user"),
-        )
-
+async def get_me(current_user: dict = Depends(get_current_user)):
+    """Retrieve profile and permissions for the current authenticated user.
+    (get_current_user already rejects tokens of deleted accounts and returns DB-fresh fields.)"""
     return UserProfileResponse(
-        id=user.id,
-        name=user.name,
-        email=user.email,
-        role=user.role,
+        id=current_user["uid"],
+        name=current_user["name"],
+        email=current_user["sub"],
+        role=current_user["role"],
     )
 
 

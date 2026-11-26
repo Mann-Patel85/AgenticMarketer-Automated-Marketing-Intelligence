@@ -112,6 +112,12 @@ async def invite_operator(
             detail="Forbidden: Only the primary Super Admin can invite new operators.",
         )
 
+    if payload.role in ["admin", "owner"] and caller_email not in admin_emails:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Only the primary Super Admin can invite operators with admin clearance.",
+        )
+
     # 1. Enforce 10-operator seat limit
     current_seats = db.query(User).count()
     if current_seats >= MAX_OPERATOR_SEATS:
@@ -177,9 +183,17 @@ async def invite_operator(
 async def update_user_clearance(
     user_id: str,
     payload: RoleUpdateRequest,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Elevate or change a workspace user's role and clearance permissions."""
+    """Elevate or change a workspace user's role and clearance permissions.
+
+    Rules:
+    - Super Admins (ADMIN_EMAIL / ADMIN_EMAILS env) can never be changed.
+    - Nobody can change their own role.
+    - Granting or revoking the admin role is reserved for Super Admins,
+      so a mistaken promotion can always be undone.
+    """
     target_user = db.query(User).filter(User.id == user_id).first()
     if not target_user:
         raise HTTPException(
@@ -188,10 +202,24 @@ async def update_user_clearance(
         )
 
     admin_emails = _get_admin_emails()
-    if (target_user.email in admin_emails or target_user.role in ["admin", "owner"]) and payload.role != "admin":
+    caller_email = current_user.get("sub", "").lower().strip()
+    caller_is_super = caller_email in admin_emails
+
+    if target_user.email in admin_emails:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot demote the primary Super Admin account.",
+            detail="Cannot change the role of the primary Super Admin account.",
+        )
+    if target_user.email == caller_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot change your own role.",
+        )
+    touches_admin = payload.role in ["admin", "owner"] or target_user.role in ["admin", "owner"]
+    if touches_admin and not caller_is_super:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the primary Super Admin can grant or revoke admin clearance.",
         )
 
     target_user.role = payload.role
@@ -237,10 +265,20 @@ async def delete_user(
         )
 
     # "not others can delete me"
-    if target_user.email in admin_emails or target_user.email == caller_email or target_user.role in ["admin", "owner"]:
+    if target_user.email in admin_emails:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: The primary Super Admin / Owner account cannot be deleted or revoked by anyone.",
+        )
+    if target_user.email == caller_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You cannot revoke your own seat.",
+        )
+    if target_user.role in ["admin", "owner"] and caller_email not in admin_emails:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Only the primary Super Admin can revoke another admin's seat.",
         )
 
     deleted_email = target_user.email

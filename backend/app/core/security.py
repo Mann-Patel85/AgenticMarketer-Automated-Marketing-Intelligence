@@ -102,7 +102,33 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token missing subject identifier",
         )
-    return payload
+
+    # Special-purpose tokens (e.g. password reset links) are never valid for API access.
+    if payload.get("purpose"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This token cannot be used for API access.",
+        )
+
+    # Re-validate against the database so deleted users lose access immediately
+    # and role changes (promotion / demotion) take effect without re-login.
+    from backend.app.database import SessionLocal, User  # lazy: database imports this module
+
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == email.lower().strip()).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account no longer exists.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return {
+            **payload,
+            "sub": user.email,
+            "uid": user.id,
+            "name": user.name,
+            "role": user.role,
+        }
 
 
 def require_roles(allowed_roles: List[str]):

@@ -256,3 +256,7 @@ backend/data/uploads/images/*
 !Backend/data/uploads/images/.gitkeep
 !backend/data/uploads/images/.gitkeep
 
+
+# Runtime data (lives in the database / generated at runtime; never commit)
+backend/data/*.json
+backend/data/*.db

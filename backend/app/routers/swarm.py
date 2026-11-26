@@ -9,20 +9,36 @@ Provides:
 
 import uuid
 import json
+import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, status, Request, Depends
+
+from backend.app.core.security import get_current_user
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
 
 from backend.app.agents.swarm_pipeline import SwarmPipeline
 from backend.app.database import get_db, SessionLocal, CampaignRun
 
-router = APIRouter(prefix="/api/swarm", tags=["Swarm Orchestration"])
+router = APIRouter(prefix="/api/swarm", tags=["Swarm Orchestration"],
+    dependencies=[Depends(get_current_user)],  # every endpoint requires a valid login
+)
 
 # In-memory store of active & queued runs
 ACTIVE_RUNS: Dict[str, Dict[str, Any]] = {}
+
+# Runs that are launched but never streamed are dropped after this many seconds
+STALE_RUN_TTL_SECONDS = 30 * 60
+
+
+def _purge_stale_runs() -> None:
+    """Drops launched-but-never-streamed runs so ACTIVE_RUNS can't grow forever."""
+    now = time.monotonic()
+    for rid, data in list(ACTIVE_RUNS.items()):
+        if not data.get("streaming") and now - data.get("launched_at", now) > STALE_RUN_TTL_SECONDS:
+            ACTIVE_RUNS.pop(rid, None)
 
 
 class SwarmLaunchRequest(BaseModel):
@@ -67,19 +83,23 @@ def _archive_campaign_run(run_id: str, payload: dict, result: dict, logs: list):
 
 
 @router.post("/launch", response_model=SwarmLaunchResponse, status_code=status.HTTP_202_ACCEPTED)
-async def launch_swarm(payload: SwarmLaunchRequest):
+async def launch_swarm(payload: SwarmLaunchRequest, current_user: dict = Depends(get_current_user)):
     """
     Launch an autonomous 6-agent marketing swarm run.
     Returns a run_id and stream_url for live SSE telemetry.
     """
+    _purge_stale_runs()
     run_id = f"run_{uuid.uuid4().hex[:12]}"
-    pipeline = SwarmPipeline(run_id, payload.model_dump())
+    pipeline = SwarmPipeline(run_id, payload.model_dump(), owner_email=current_user["sub"])
 
     ACTIVE_RUNS[run_id] = {
         "pipeline": pipeline,
         "payload": payload.model_dump(),
         "status": "active",
         "created_at": pipeline._timestamp(),
+        "launched_at": time.monotonic(),
+        "streaming": False,
+        "aborted": False,
     }
 
     return SwarmLaunchResponse(
@@ -104,6 +124,13 @@ async def stream_swarm_execution(run_id: str, request: Request):
             detail=f"Swarm run '{run_id}' not found or already completed.",
         )
 
+    if run_data.get("streaming"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Swarm run '{run_id}' is already being streamed.",
+        )
+    run_data["streaming"] = True
+
     pipeline: SwarmPipeline = run_data["pipeline"]
     payload: dict = run_data.get("payload", {})
 
@@ -112,9 +139,16 @@ async def stream_swarm_execution(run_id: str, request: Request):
 
     async def event_generator():
         nonlocal final_output
+        stream = pipeline.execute_stream()
         try:
-            async for event in pipeline.execute_stream():
+            async for event in stream:
                 if await request.is_disconnected():
+                    break
+                if run_data.get("aborted"):
+                    yield {
+                        "event": "aborted",
+                        "data": json.dumps({"type": "aborted", "run_id": run_id, "message": "Run aborted by user."}),
+                    }
                     break
 
                 ev_type = event.get("type", "message")
@@ -128,8 +162,9 @@ async def stream_swarm_execution(run_id: str, request: Request):
                     "data": json.dumps(event),
                 }
         finally:
-            if run_id in ACTIVE_RUNS:
-                ACTIVE_RUNS.pop(run_id, None)
+            # Stop the pipeline generator so no further agent steps (and API spend) run
+            await stream.aclose()
+            ACTIVE_RUNS.pop(run_id, None)
             # Archive run to database
             if final_output:
                 _archive_campaign_run(run_id, payload, final_output, collected_logs)
@@ -145,13 +180,13 @@ async def stream_swarm_execution(run_id: str, request: Request):
 
 
 @router.post("/run-sync")
-async def run_swarm_sync(payload: SwarmLaunchRequest):
+async def run_swarm_sync(payload: SwarmLaunchRequest, current_user: dict = Depends(get_current_user)):
     """
     Synchronous execution endpoint for testing and direct API integration.
     Waits for all agents, archives run in database, and returns the complete final campaign bundle.
     """
     run_id = f"sync_{uuid.uuid4().hex[:8]}"
-    pipeline = SwarmPipeline(run_id, payload.model_dump())
+    pipeline = SwarmPipeline(run_id, payload.model_dump(), owner_email=current_user["sub"])
 
     final_result = None
     all_logs = []
@@ -196,7 +231,12 @@ async def run_swarm_sync(payload: SwarmLaunchRequest):
 @router.post("/abort/{run_id}")
 async def abort_swarm(run_id: str):
     """Abort an active swarm execution."""
-    if run_id in ACTIVE_RUNS:
-        ACTIVE_RUNS.pop(run_id, None)
+    run_data = ACTIVE_RUNS.get(run_id)
+    if run_data:
+        if run_data.get("streaming"):
+            # The live stream checks this flag between events and shuts the pipeline down
+            run_data["aborted"] = True
+        else:
+            ACTIVE_RUNS.pop(run_id, None)
         return {"success": True, "message": f"Run '{run_id}' aborted."}
     return {"success": False, "message": f"Run '{run_id}' was not active."}

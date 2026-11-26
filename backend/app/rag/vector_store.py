@@ -81,6 +81,11 @@ class RAGVectorStore:
         self.uploads_dir = Path(settings.UPLOAD_DIRECTORY)
         self.metadata_file = self.data_dir / "rag_metadata.json"
         self.chunks_file = self.data_dir / "rag_chunks.json"
+        # In-process cache of all chunks (incl. vectors). Avoids re-reading every
+        # chunk from the database on each query. Kept in sync by _save_chunks.
+        # Assumes a single backend process (as on Render); with multiple workers
+        # each would keep its own cache.
+        self._chunks_cache: Optional[List[Dict[str, Any]]] = None
 
         # Ensure directories exist
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -131,6 +136,7 @@ class RAGVectorStore:
                                         chunk_count=float(fd.get("chunk_count", 0)),
                                         status=fd.get("status", "ready"),
                                         preview=fd.get("preview", ""),
+                                        uploaded_by=fd.get("uploaded_by"),
                                         created_at=fd.get("created_at", datetime.now(timezone.utc).isoformat()),
                                     ))
                             db.commit()
@@ -168,6 +174,8 @@ class RAGVectorStore:
                         existing.preview = d.get("preview", existing.preview)
                         if "extracted_text" in d:
                             existing.extracted_text = d["extracted_text"]
+                        if d.get("uploaded_by") and not existing.uploaded_by:
+                            existing.uploaded_by = d["uploaded_by"]
                     else:
                         db.add(GroundingDocument(
                             id=doc_id,
@@ -178,6 +186,7 @@ class RAGVectorStore:
                             status=d.get("status", "ready"),
                             preview=d.get("preview", ""),
                             extracted_text=d.get("extracted_text", ""),
+                            uploaded_by=d.get("uploaded_by"),
                             created_at=d.get("created_at", datetime.now(timezone.utc).isoformat()),
                         ))
                 db.commit()
@@ -185,6 +194,14 @@ class RAGVectorStore:
             print(f"[RAG VectorStore DB Sync Warning] Metadata error: {e}")
 
     def _load_chunks(self) -> List[Dict[str, Any]]:
+        """Load vector chunks (served from the in-memory cache after the first load)."""
+        if self._chunks_cache is not None:
+            return list(self._chunks_cache)
+        chunks = self._load_chunks_uncached()
+        self._chunks_cache = list(chunks)
+        return chunks
+
+    def _load_chunks_uncached(self) -> List[Dict[str, Any]]:
         """Load vector chunks from persistent database, with file cache fallback."""
         try:
             with SessionLocal() as db:
@@ -227,6 +244,7 @@ class RAGVectorStore:
 
     def _save_chunks(self, chunks: List[Dict[str, Any]]) -> None:
         """Save vector chunks to local file cache and persistent database."""
+        self._chunks_cache = list(chunks)
         try:
             with open(self.chunks_file, "w", encoding="utf-8") as f:
                 json.dump(chunks, f, indent=2)
@@ -513,8 +531,10 @@ class RAGVectorStore:
         return float(np.dot(a, b) / (norm_a * norm_b))
 
     # ── Document Management ──────────────────────────────────────────
-    def index_document(self, file_path: Path, original_filename: str) -> Dict[str, Any]:
-        """Ingest, parse, chunk, and index a document into the RAG vector store."""
+    def index_document(self, file_path: Path, original_filename: str, *, owner: str) -> Dict[str, Any]:
+        """Ingest, parse, chunk, and index a document into `owner`'s private knowledge base."""
+        if not owner:
+            raise ValueError("index_document requires an owner")
         ext = Path(original_filename).suffix.lower()
         extracted_text = self.extract_text(file_path, ext)
         chunks = self.chunk_text(extracted_text)
@@ -553,6 +573,7 @@ class RAGVectorStore:
             "status": "ready",
             "preview": preview,
             "extracted_text": extracted_text,
+            "uploaded_by": owner,
             "created_at": created_at,
         }
 
@@ -562,54 +583,60 @@ class RAGVectorStore:
 
         return doc_meta
 
-    def list_documents(self) -> List[Dict[str, Any]]:
-        """Return all indexed documents and their stats."""
+    # ── Per-user isolation ───────────────────────────────────────────
+    # Every knowledge base is private: each document belongs to the user who
+    # uploaded it (`uploaded_by`), and all reads/queries/deletes are scoped to
+    # one owner. `owner` is a required keyword so callers can't forget it.
+
+    def list_all_documents(self) -> List[Dict[str, Any]]:
+        """All documents across every user. Only for aggregate counts (health/stats)."""
         return self._load_metadata()
 
-    def delete_document(self, doc_id: str) -> bool:
-        """Remove document and its vector chunks from the store by ID or filename."""
-        metadata = self._load_metadata()
+    def list_documents(self, *, owner: str) -> List[Dict[str, Any]]:
+        """Return the documents (and stats) in `owner`'s knowledge base."""
+        if not owner:
+            return []
+        return [d for d in self._load_metadata() if d.get("uploaded_by") == owner]
+
+    @staticmethod
+    def _match_documents(metadata: List[Dict[str, Any]], doc_id: str) -> List[Dict[str, Any]]:
         target = str(doc_id).strip()
-        matched = [
+        return [
             doc for doc in metadata
             if doc.get("id") == target or doc.get("filename") == target or doc.get("filename", "").lower() == target.lower()
         ]
 
+    def find_documents(self, doc_id: str, *, owner: str) -> List[Dict[str, Any]]:
+        """`owner`'s documents matching an ID or filename."""
+        return self._match_documents(self.list_documents(owner=owner), doc_id)
+
+    def delete_document(self, doc_id: str, *, owner: str) -> bool:
+        """Remove one of `owner`'s documents (by ID or filename) and its vector chunks.
+        Other users' documents are never touched, even if they share a filename."""
+        matched = self.find_documents(doc_id, owner=owner)
         if not matched:
             return False
 
         removed_ids = {doc["id"] for doc in matched}
-        removed_filenames = {doc.get("filename") for doc in matched if doc.get("filename")}
-
+        metadata = self._load_metadata()
         updated_meta = [doc for doc in metadata if doc["id"] not in removed_ids]
 
+        # Chunks are removed strictly by doc_id (never by filename, which other users may share)
         chunks = self._load_chunks()
-        updated_chunks = [
-            c for c in chunks
-            if c.get("doc_id") not in removed_ids and c.get("doc_name") not in removed_filenames
-        ]
+        updated_chunks = [c for c in chunks if c.get("doc_id") not in removed_ids]
 
-        # Clean up physical uploaded files
-        settings = get_settings()
-        uploads_dir = Path(settings.UPLOAD_DIRECTORY)
-        for fname in removed_filenames:
-            if not fname:
-                continue
-            fpath = uploads_dir / fname
-            if fpath.exists() and fpath.is_file():
+        # Best-effort cleanup of legacy upload files (new uploads are deleted right after
+        # indexing). Only remove the exact file, and only if no remaining document uses that name.
+        uploads_dir = Path(get_settings().UPLOAD_DIRECTORY)
+        remaining_names = {d.get("filename") for d in updated_meta}
+        for fname in {doc.get("filename") for doc in matched if doc.get("filename")}:
+            safe_name = Path(fname).name
+            fpath = uploads_dir / safe_name
+            if safe_name not in remaining_names and fpath.is_file():
                 try:
                     fpath.unlink()
                 except Exception:
                     pass
-            # Also clean up any legacy stem variations on disk
-            stem = Path(fname).stem
-            ext = Path(fname).suffix
-            for match in uploads_dir.glob(f"{stem}*{ext}"):
-                if match.is_file():
-                    try:
-                        match.unlink()
-                    except Exception:
-                        pass
 
         self._save_metadata(updated_meta)
         self._save_chunks(updated_chunks)
@@ -644,9 +671,15 @@ class RAGVectorStore:
         top_k: int = 4,
         min_score: float = 0.0,
         doc_filter: Optional[List[str]] = None,
+        *,
+        owner: str,
     ) -> List[Dict[str, Any]]:
-        """Retrieve most relevant semantic chunks for a given marketing directive/query with optional document filtering."""
-        chunks = self._load_chunks()
+        """Retrieve most relevant semantic chunks from `owner`'s knowledge base only,
+        with optional document filtering."""
+        owned_ids = {d["id"] for d in self.list_documents(owner=owner) if d.get("id")}
+        if not owned_ids:
+            return []
+        chunks = [c for c in self._load_chunks() if c.get("doc_id") in owned_ids]
         if not chunks:
             return []
 

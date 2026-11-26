@@ -45,6 +45,51 @@ function LoginContent() {
     const [forgotLoading, setForgotLoading] = useState(false);
     const [forgotSubmitted, setForgotSubmitted] = useState(false);
 
+    // Reset password (from emailed link: /login?reset_token=...)
+    const resetToken = searchParams.get('reset_token');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [resetLoading, setResetLoading] = useState(false);
+    const [resetError, setResetError] = useState(null);
+
+    const closeResetModal = () => {
+        setNewPassword('');
+        setConfirmPassword('');
+        setResetError(null);
+        router.replace('/login');
+    };
+
+    const handleResetPasswordSubmit = async (e) => {
+        e.preventDefault();
+        setResetError(null);
+        if (newPassword.length < 6) {
+            setResetError('Password must be at least 6 characters.');
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setResetError('Passwords do not match.');
+            return;
+        }
+        setResetLoading(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: resetToken, new_password: newPassword }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.detail || 'Could not reset password. Please request a new link.');
+            }
+            setToast({ type: 'success', message: data.message || 'Password updated. Please sign in.' });
+            closeResetModal();
+        } catch (err) {
+            setResetError(err.message);
+        } finally {
+            setResetLoading(false);
+        }
+    };
+
     // Check for error in query params (e.g. from Google OAuth redirect)
     useEffect(() => {
         const queryError = searchParams.get('error');
@@ -73,10 +118,11 @@ function LoginContent() {
 
     // Redirect if already authenticated
     useEffect(() => {
-        if (user) {
+        // Don't bounce away while the user is completing a password reset
+        if (user && !resetToken) {
             router.replace('/dashboard');
         }
-    }, [user, router]);
+    }, [user, router, resetToken]);
 
     // Auto-dismiss transient toasts
     useEffect(() => {
@@ -504,6 +550,91 @@ function LoginContent() {
                                     </button>
                                 </form>
                             )}
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Modal: Set New Password (opened from emailed reset link) */}
+            <AnimatePresence>
+                {resetToken && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 max-w-sm w-full shadow-2xl relative"
+                        >
+                            <button
+                                type="button"
+                                onClick={closeResetModal}
+                                className="absolute top-4 right-4 text-slate-400 hover:text-white p-1"
+                                aria-label="Close modal"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-3 text-amber-400">
+                                <KeyRound className="w-5 h-5" />
+                            </div>
+
+                            <h3 className="text-base font-bold text-white">Set New Password</h3>
+                            <p className="text-xs text-slate-400 mt-1 mb-4">
+                                Choose a new password for your account. This link can be used once and expires after 1 hour.
+                            </p>
+
+                            <form onSubmit={handleResetPasswordSubmit} className="space-y-3">
+                                <div>
+                                    <label htmlFor="new-password-input" className="block text-xs font-medium text-slate-300 mb-1">
+                                        New Password
+                                    </label>
+                                    <input
+                                        id="new-password-input"
+                                        type="password"
+                                        required
+                                        minLength={6}
+                                        autoComplete="new-password"
+                                        value={newPassword}
+                                        onChange={(e) => setNewPassword(e.target.value)}
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="confirm-password-input" className="block text-xs font-medium text-slate-300 mb-1">
+                                        Confirm Password
+                                    </label>
+                                    <input
+                                        id="confirm-password-input"
+                                        type="password"
+                                        required
+                                        minLength={6}
+                                        autoComplete="new-password"
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+                                    />
+                                </div>
+                                {resetError && (
+                                    <p className="text-[11px] text-rose-400 flex items-center gap-1.5">
+                                        <AlertCircle className="w-3.5 h-3.5" />
+                                        {resetError}
+                                    </p>
+                                )}
+                                <button
+                                    type="submit"
+                                    disabled={resetLoading}
+                                    className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold text-xs rounded-xl shadow transition flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                    {resetLoading ? (
+                                        <>
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            <span>Updating...</span>
+                                        </>
+                                    ) : (
+                                        'Update Password'
+                                    )}
+                                </button>
+                            </form>
                         </motion.div>
                     </div>
                 )}

@@ -162,6 +162,10 @@ def get_settings() -> Settings:
     if not settings.JWT_SECRET:
         import secrets
         settings.JWT_SECRET = secrets.token_hex(32)
+        print(
+            "[AgenticMarketer SECURITY WARNING] JWT_SECRET is not set. Using a random per-process "
+            "secret: every restart will log all users out. Set JWT_SECRET in your environment."
+        )
     # Ensure data and upload directories exist
     Path(settings.DATA_DIRECTORY).mkdir(parents=True, exist_ok=True)
     Path(settings.CHROMA_PERSIST_DIRECTORY).mkdir(parents=True, exist_ok=True)

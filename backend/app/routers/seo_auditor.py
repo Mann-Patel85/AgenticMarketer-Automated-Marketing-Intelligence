@@ -8,11 +8,16 @@ import time
 import urllib.parse
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+
+from backend.app.core.security import get_current_user
+from backend.app.core.net_safety import safe_request, UnsafeURLError
 import httpx
 from bs4 import BeautifulSoup
 
-router = APIRouter(prefix="/api/seo", tags=["Technical SEO Crawler"])
+router = APIRouter(prefix="/api/seo", tags=["Technical SEO Crawler"],
+    dependencies=[Depends(get_current_user)],  # every endpoint requires a valid login
+)
 
 
 class SEOAuditRequest(BaseModel):
@@ -52,12 +57,15 @@ async def run_technical_seo_audit(payload: SEOAuditRequest):
 
     start_time = time.time()
     try:
-        async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
-            resp = await client.get(url_str, headers=headers)
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            # safe_request blocks private/internal targets and re-checks every redirect (SSRF guard)
+            resp = await safe_request(client, "GET", url_str, headers=headers)
             elapsed_ms = round((time.time() - start_time) * 1000, 2)
             html_text = resp.text
             status_code = resp.status_code
             final_url = str(resp.url)
+    except UnsafeURLError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

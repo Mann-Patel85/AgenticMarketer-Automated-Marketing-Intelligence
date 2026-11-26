@@ -22,32 +22,45 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from backend.app.core.security import get_current_user
+from backend.app.core.net_safety import safe_request, UnsafeURLError
 import httpx
 
 from backend.app.core.config import get_settings
+from backend.app.database import SessionLocal, PublishRecord
 
-router = APIRouter(prefix="/api/publish", tags=["Omnichannel Publishing"])
+router = APIRouter(prefix="/api/publish", tags=["Omnichannel Publishing"],
+    dependencies=[Depends(get_current_user)],  # every endpoint requires a valid login
+)
 
-HISTORY_FILE = Path(get_settings().DATA_DIRECTORY) / "publish_history.json"
-
-
-def _load_history() -> List[Dict[str, Any]]:
-    if not HISTORY_FILE.exists():
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump([], f, indent=2)
-        return []
-    try:
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return []
+# Publish history is persisted in the database (publish_records table), so it
+# survives restarts/redeploys on ephemeral hosts like Render. The legacy
+# publish_history.json is imported once at startup (see database.init_db).
+HISTORY_LIMIT = 200
 
 
-def _save_history(records: List[Dict[str, Any]]) -> None:
-    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(records, f, indent=2)
+def _save_publish_record(record: Dict[str, Any], user_email: str) -> None:
+    with SessionLocal() as db:
+        db.add(PublishRecord(
+            id=record["dispatch_id"],
+            user_email=user_email,
+            record=record,
+            created_at=datetime.now(timezone.utc),
+        ))
+        db.commit()
+
+
+def _load_publish_history(user_email: Optional[str]) -> List[Dict[str, Any]]:
+    """Oldest-first list of dispatch records (same order the JSON file used).
+    user_email=None returns every record (admins)."""
+    with SessionLocal() as db:
+        q = db.query(PublishRecord)
+        if user_email is not None:
+            q = q.filter(PublishRecord.user_email == user_email)
+        rows = q.order_by(PublishRecord.created_at.desc()).limit(HISTORY_LIMIT).all()
+        return [{**(r.record or {}), "published_by": r.user_email} for r in reversed(rows)]
 
 
 def clean_plain_text(text: str) -> str:
@@ -649,7 +662,10 @@ async def list_supported_platforms():
 
 
 @router.post("/broadcast", response_model=BroadcastResponse)
-async def broadcast_campaign(payload: PublishBroadcastRequest):
+async def broadcast_campaign(
+    payload: PublishBroadcastRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Broadcast approved marketing copy and media to selected social networks simultaneously.
     If API keys / access tokens are set in .env, executes live REST calls to LinkedIn, X, Meta, Reddit, Threads, Medium, Dev.to, WordPress, Discord, Slack, etc.
@@ -693,11 +709,18 @@ async def broadcast_campaign(payload: PublishBroadcastRequest):
                     "wordpress": content[:50000],
                 }
             async with httpx.AsyncClient(timeout=12.0) as client:
-                resp = await client.post(effective_webhook, json=webhook_body)
+                if payload.webhook_url:
+                    # User-supplied destination: block private/internal targets (SSRF guard)
+                    resp = await safe_request(client, "POST", effective_webhook, json=webhook_body)
+                else:
+                    # Operator-configured webhook from environment: trusted
+                    resp = await client.post(effective_webhook, json=webhook_body)
                 if resp.status_code >= 400:
                     webhook_status = f"warning: HTTP {resp.status_code}"
                 else:
                     webhook_status = f"delivered (HTTP {resp.status_code})"
+        except UnsafeURLError as e:
+            webhook_status = f"blocked: {str(e)[:80]}"
         except Exception as e:
             webhook_status = f"failed: {str(e)[:60]}"
 
@@ -752,9 +775,8 @@ async def broadcast_campaign(payload: PublishBroadcastRequest):
             )
         )
 
-    # Save to history audit trail
-    history = _load_history()
-    history.append({
+    # Save to history audit trail (database)
+    _save_publish_record({
         "dispatch_id": dispatch_id,
         "content": payload.content,
         "content_snippet": payload.content[:200],
@@ -765,8 +787,7 @@ async def broadcast_campaign(payload: PublishBroadcastRequest):
         "scheduled_time": payload.scheduled_at,
         "created_at": now_iso,
         "receipts": [r.model_dump() for r in receipts],
-    })
-    _save_history(history)
+    }, current_user["sub"])
 
     return BroadcastResponse(
         dispatch_id=dispatch_id,
@@ -778,6 +799,8 @@ async def broadcast_campaign(payload: PublishBroadcastRequest):
 
 
 @router.get("/history")
-async def get_publish_history():
-    """Retrieve audit history of all dispatched and scheduled campaigns."""
-    return _load_history()
+async def get_publish_history(current_user: dict = Depends(get_current_user)):
+    """Retrieve audit history of dispatched and scheduled campaigns.
+    Users see their own dispatches; admins see the whole workspace."""
+    is_admin = current_user.get("role") in ("admin", "owner")
+    return _load_publish_history(None if is_admin else current_user["sub"])

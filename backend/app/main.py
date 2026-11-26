@@ -20,12 +20,13 @@ for _p in [str(_repo_root), str(_backend_dir)]:
         sys.path.insert(0, _p)
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Response, HTTPException, Request
+from fastapi import FastAPI, Response, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 
 from backend.app.core.config import get_settings
-from backend.app.database import init_db
+from backend.app.database import init_db, SessionLocal, User, CampaignRun
+from backend.app.core.security import get_current_user
 from backend.app.routers.auth import router as auth_router
 from backend.app.routers.admin import router as admin_router
 from backend.app.routers.rag import router as rag_router
@@ -64,11 +65,15 @@ app = FastAPI(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catch-all global exception handler to prevent backend process crash."""
+    """Catch-all global exception handler to prevent backend process crash.
+    Full details go to the server log only; clients get a generic message so
+    internal paths, SQL and secrets in exception text are never exposed."""
+    import traceback
     print(f"[Backend Warning] Unhandled Exception at {request.url.path}: {exc}")
+    traceback.print_exc()
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Internal server error: {str(exc)}", "path": str(request.url.path)},
+        content={"detail": "Internal server error. Please try again.", "path": str(request.url.path)},
     )
 
 # ── Dynamic CORS Policy for Production (Vercel & Render) ─────────────
@@ -153,7 +158,7 @@ async def ping():
 @app.get("/api/health", tags=["System"])
 async def health_check():
     """Real-time microservice health check."""
-    docs = rag_store.list_documents()
+    docs = rag_store.list_all_documents()
     images_dir = Path(settings.UPLOAD_DIRECTORY) / "images"
     images_count = len(list(images_dir.glob("*.png"))) if images_dir.exists() else 0
     return {
@@ -187,19 +192,24 @@ async def health_check():
 
 
 @app.get("/api/stats", tags=["System"])
-async def system_telemetry():
-    """Telemetry data matching the Admin Console dashboard."""
-    docs = rag_store.list_documents()
+async def system_telemetry(current_user: dict = Depends(get_current_user)):
+    """Live telemetry for the Admin Console dashboard (requires login)."""
+    from backend.app.routers.auth import MAX_OPERATOR_SEATS
+
+    docs = rag_store.list_all_documents()
     total_chunks = sum(d.get("chunk_count", 0) for d in docs)
+    with SessionLocal() as db:
+        active_seats = db.query(User).count()
+        campaign_runs = db.query(CampaignRun).count()
     return {
-        "groq_tokens_used": 142850,
-        "groq_token_quota": 1000000,
-        "gemini_tokens_used": 0,
-        "gemini_token_quota": 0,
+        # Token usage isn't metered yet; null tells the UI to show "not tracked"
+        "groq_tokens_used": None,
+        "groq_token_quota": None,
         "chroma_chunks_indexed": total_chunks,
         "indexed_documents": len(docs),
-        "active_seats": 5,
-        "allocated_seats": 10,
-        "active_agents": 5,
+        "total_campaign_runs": campaign_runs,
+        "active_seats": active_seats,
+        "allocated_seats": MAX_OPERATOR_SEATS,
+        "active_agents": 6,
         "system_status": "all_systems_operational",
     }

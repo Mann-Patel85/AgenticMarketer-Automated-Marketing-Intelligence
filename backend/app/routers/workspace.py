@@ -10,36 +10,24 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Request, Query, Depends
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db, Workspace
+from backend.app.core.security import get_current_user
 
 router = APIRouter(prefix="/api/workspace", tags=["Workspace"])
 
 
-def _resolve_user_email(request: Request, email_param: Optional[str] = None) -> str:
-    """Resolves user email from Authorization JWT token or query/body parameter."""
-    if email_param and "@" in email_param:
-        return email_param.lower().strip()
-
-    # Check Bearer token in header
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header.split(" ", 1)[1].strip()
-        try:
-            from backend.app.core.security import decode_access_token
-            payload = decode_access_token(token)
-            if payload and "sub" in payload:
-                return payload["sub"].lower().strip()
-        except Exception:
-            pass
-
-    return "default_user@company.com"
+def _user_email(current_user: dict = Depends(get_current_user)) -> str:
+    """The workspace owner is ALWAYS the authenticated user. Client-supplied
+    `email` params/fields are ignored, so nobody can read or overwrite
+    another user's workspace."""
+    return current_user["sub"].lower().strip()
 
 
 class WorkspaceSaveRequest(BaseModel):
-    email: Optional[str] = None
+    email: Optional[str] = None  # ignored; kept for backwards-compatible clients
     campaignGoal: Optional[str] = ""
     targetAudience: Optional[str] = "B2B Tech Executives & Marketing Leaders"
     tone: Optional[str] = "Authoritative & High-Energy"
@@ -62,12 +50,10 @@ class WorkspaceSaveRequest(BaseModel):
 
 @router.get("")
 async def get_workspace(
-    request: Request,
-    email: Optional[str] = Query(None),
+    user_email: str = Depends(_user_email),
     db: Session = Depends(get_db),
 ):
     """Retrieve saved workspace state and campaign history for the user from Neon DB."""
-    user_email = _resolve_user_email(request, email)
     record = db.query(Workspace).filter(Workspace.user_email == user_email).first()
 
     if not record:
@@ -91,11 +77,10 @@ async def get_workspace(
 @router.post("")
 async def save_workspace(
     payload: WorkspaceSaveRequest,
-    request: Request,
+    user_email: str = Depends(_user_email),
     db: Session = Depends(get_db),
 ):
     """Persist current user workspace state and update campaign history in Neon DB."""
-    user_email = _resolve_user_email(request, payload.email)
     record = db.query(Workspace).filter(Workspace.user_email == user_email).first()
 
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -144,12 +129,10 @@ async def save_workspace(
 
 @router.post("/reset")
 async def reset_workspace(
-    request: Request,
-    email: Optional[str] = Query(None),
+    user_email: str = Depends(_user_email),
     db: Session = Depends(get_db),
 ):
     """Resets the active campaign draft fields, preserving campaign history in Neon DB."""
-    user_email = _resolve_user_email(request, email)
     record = db.query(Workspace).filter(Workspace.user_email == user_email).first()
 
     if record:
@@ -166,12 +149,10 @@ async def reset_workspace(
 
 @router.get("/history")
 async def get_workspace_history(
-    request: Request,
-    email: Optional[str] = Query(None),
+    user_email: str = Depends(_user_email),
     db: Session = Depends(get_db),
 ):
     """Retrieve full campaign history archives for user from Neon DB."""
-    user_email = _resolve_user_email(request, email)
     record = db.query(Workspace).filter(Workspace.user_email == user_email).first()
     history = record.history_data if record else []
     return {
