@@ -3,11 +3,13 @@
 [![Next.js](https://img.shields.io/badge/Frontend-Next.js%2016%20%7C%20React%2019-black?logo=next.js&logoColor=white)](https://nextjs.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Styling-Tailwind%20CSS%20v4-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![FastAPI](https://img.shields.io/badge/Backend-Python%20FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Groq LPU](https://img.shields.io/badge/LLM%20Engine-Groq%20Cloud%20LPUs-F55036?logo=fastapi&logoColor=white)](https://groq.com/)
+[![Groq LPU](https://img.shields.io/badge/LLM%20Engine-Groq%20Cloud%20LPUs-F55036)](https://groq.com/)
 [![Cloudflare AI](https://img.shields.io/badge/Image%20Diffusion-Cloudflare%20FLUX.1-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers-ai/)
-[![Vector Store](https://img.shields.io/badge/Vector%20Store-TF--IDF%20%26%20Cosine%20RAG-FF4F00?logo=databricks&logoColor=white)](https://github.com/Mann-Patel85/AgenticMarketer-Automated-Marketing-Intelligence)
+[![PostgreSQL](https://img.shields.io/badge/Database-Neon%20PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://neon.tech/)
 
-**AgenticMarketer** is an enterprise-grade autonomous AI marketing intelligence SaaS platform engineered to operate as a 24/7 digital marketing agency. Rather than relying on simple, single-prompt instructions or brittle manual workflows, AgenticMarketer coordinates a synchronized **6-agent swarm**—spanning document RAG grounding, live market research, high-throughput Groq LPU copywriting, Cloudflare FLUX.1 edge visual diffusion, technical SEO auditing, and omnichannel social publishing.
+**AgenticMarketer** is an AI marketing platform that runs a coordinated **6-agent swarm**: it grounds campaigns in your own brand documents, gathers live market context, writes multi-channel copy with Groq LPUs, generates visuals with Cloudflare FLUX.1, audits SEO and readability, and publishes to the channels you choose.
+
+**Live app:** https://agentic-marketer-automated-marketin.vercel.app
 
 ---
 
@@ -15,205 +17,247 @@
 
 - [Core System Overview](#-core-system-overview)
 - [System Architecture](#-system-architecture)
-- [6-Agent Swarm Topology Pipeline](#-6-agent-swarm-topology-pipeline)
-- [Tech Stack & Infrastructure](#-tech-stack--infrastructure)
-- [Frontend Architecture & Workspaces](#-frontend-architecture--workspaces)
-- [Role-Based Access Control (RBAC)](#-role-based-access-control-rbac)
-- [Backend REST API Specification](#-backend-rest-api-specification)
+- [6-Agent Swarm Pipeline](#-6-agent-swarm-pipeline)
+- [Tech Stack](#-tech-stack)
+- [Frontend Pages](#-frontend-pages)
+- [Security & Data Privacy](#-security--data-privacy)
+- [Roles & Access Control](#-roles--access-control)
+- [Backend REST API](#-backend-rest-api)
 - [Project Directory Structure](#-project-directory-structure)
-- [Getting Started & Installation](#-getting-started--installation)
+- [Getting Started](#-getting-started)
 - [Environment Configuration](#-environment-configuration)
-- [System Capabilities & Roadmap](#-system-capabilities--roadmap)
+- [Deployment (Vercel + Render + Neon)](#-deployment-vercel--render--neon)
+- [Capabilities & Roadmap](#-capabilities--roadmap)
 - [License](#-license)
 
 ---
 
 ## 🌟 Core System Overview
 
-Traditional marketing workflows are fragmented across separate research tools, copywriting assistants, designer handoffs, SEO auditors, and social schedulers. **AgenticMarketer** consolidates this entire lifecycle into a unified, autonomous, grounded pipeline:
+Marketing work is usually split across research tools, copywriting assistants, designers, SEO auditors and social schedulers. **AgenticMarketer** brings that lifecycle into one grounded pipeline:
 
-1. **Private Grounding via RAG**: Ingests internal brand playbooks, product battlecards, and guidelines (`.pdf`, `.docx`, `.txt`) into a high-performance vector retrieval store with stop-word penalty optimization and file-scoped semantic search.
-2. **Live Competitive Intelligence**: Automatically conducts live SERP research and competitor gap extraction via the DuckDuckGo Search API.
-3. **High-Throughput Copywriting**: Groq LPUs (`openai/gpt-oss-120b`) synthesize multi-channel bundles (High-converting Hooks, LinkedIn posts, Reddit discussions, Blog articles, Cold Emails, and Meta Ad variants).
-4. **Multimodal Visual Synthesis**: Cloudflare Workers AI renders photorealistic 1024×1024 marketing banners via `@cf/black-forest-labs/flux-1-schnell` with automated image clarity validation scores and full PNG export.
-5. **SEO & Readability Auditing**: Evaluates Flesch-Kincaid readability index (Grade 8 target), keyword density, and search intent alignment.
-6. **Omnichannel Publishing Engine**: Schedules and broadcasts verified campaigns across LinkedIn, X (Twitter), Meta (Facebook & Instagram), Threads, Reddit, YouTube, TikTok, Pinterest, and Universal Webhooks.
+1. **Private brand grounding (RAG):** each user uploads brand playbooks, battlecards and guidelines (`.pdf`, `.docx`, `.txt`, `.md`, and images) into their **own private knowledge base**, searched with TF-IDF cosine retrieval and stop-word penalty scoring.
+2. **Live market context:** pulls recent headlines from Google News RSS and background facts from Wikipedia to inform messaging.
+3. **High-throughput copywriting:** Groq LPUs (`openai/gpt-oss-120b`, with `openai/gpt-oss-20b` as the fast model) write multi-channel bundles: hooks, LinkedIn posts, X threads, Reddit discussions, blog articles, cold emails and Meta ad variants.
+4. **Visual generation:** Cloudflare Workers AI renders 1024×1024 banners with `@cf/black-forest-labs/flux-1-schnell`, with automatic fallbacks and an image clarity score.
+5. **SEO & readability auditing:** Flesch-Kincaid readability (Grade 8 target), keyword density and search-intent checks, plus a live technical site auditor.
+6. **Omnichannel publishing:** broadcasts approved campaigns to LinkedIn, X, Facebook, Instagram, Threads, Reddit, Medium, Dev.to, WordPress, Discord, Slack and custom webhooks, with a saved audit history.
 
 ---
 
 ## 🏗️ System Architecture
 
-AgenticMarketer is built as a **decoupled full-stack SaaS architecture**:
+AgenticMarketer is a decoupled full-stack application:
 
 ```
                                   USER BROWSER / CLIENT
                                             │
                                             ▼
                     ┌──────────────────────────────────────────────┐
-                    │     Next.js 16 (App Router) + React 19       │
-                    │   • Swarm Launcher Workspace (/dashboard)   │
-                    │   • Vector Knowledge Base & Search (/knowledge) │
-                    │   • System Telemetry & Admin (/admin)        │
+                    │   Next.js 16 (App Router) + React 19 — Vercel│
+                    │   • Swarm Launcher        (/dashboard)       │
+                    │   • Private Knowledge Base (/knowledge)      │
+                    │   • Admin Console          (/admin)          │
+                    │   • Terms & Privacy        (/terms, /privacy)│
                     └───────────────────────┬──────────────────────┘
-                                            │ Axios (Bearer JWT / SSE Stream)
+                                            │ Axios + Bearer JWT
                                             ▼
                     ┌──────────────────────────────────────────────┐
-                    │          FastAPI Microservice Backend        │
-                    │   • /api/auth   • /api/rag   • /api/swarm    │
-                    │   • /api/publish                             │
-                    └───────┬───────────────┬──────────────┬───────┘
-                            │               │              │
-         ┌──────────────────▼──┐     ┌──────▼──────┐   ┌───▼──────────────────┐
-         │ TF-IDF Vector Store │     │   Groq LPU  │   │ Cloudflare Workers AI│
-         │ (Cosine Similarity) │     │ (gpt-oss)   │   │ (FLUX.1 Diffusion)   │
-         └─────────────────────┘     └─────────────┘   └──────────────────────┘
-                                            │
-                               ┌────────────▼────────────┐
-                               │ 6-Agent Swarm Pipeline  │
-                               └─────────────────────────┘
+                    │        FastAPI Backend — Render              │
+                    │  /api/auth  /api/admin  /api/rag  /api/swarm │
+                    │  /api/publish  /api/workspace  /api/seo      │
+                    └───────┬──────────────┬───────────────┬───────┘
+                            │              │               │
+         ┌──────────────────▼──┐   ┌───────▼──────┐   ┌────▼─────────────────┐
+         │  Neon PostgreSQL    │   │  Groq LPU    │   │ Cloudflare Workers AI│
+         │ users · workspaces  │   │ (gpt-oss)    │   │ (FLUX.1 + vision)    │
+         │ KB docs & chunks    │   └──────────────┘   └──────────────────────┘
+         │ campaigns · publish │
+         └─────────────────────┘
 ```
 
 ---
 
-## 🤖 6-Agent Swarm Topology Pipeline
+## 🤖 6-Agent Swarm Pipeline
 
-When a campaign is launched from the Swarm Workspace, the system executes an autonomous 6-agent sequential pipeline:
+When you launch a campaign, the agents run in sequence:
 
 ```
 ┌────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
 │ 1. Ingestion Agent     │ ───▶  │ 2. Research Agent      │ ───▶  │ 3. Copywriter Agent    │
-│ • pdfplumber / docx    │       │ • DuckDuckGo SERP      │       │ • Groq LPU Copy Engine │
-│ • Vector Store Chunks  │       │ • Competitor Teardowns │       │ • Multi-Channel Copy   │
+│ • Your private KB      │       │ • Google News RSS      │       │ • Groq LPU Copy Engine │
+│ • Brand disambiguation │       │ • Wikipedia context    │       │ • Multi-Channel Copy   │
 └────────────────────────┘       └────────────────────────┘       └───────────┬────────────┘
                                                                               │
 ┌────────────────────────┐       ┌────────────────────────┐                   │
 │ 6. Social Publisher    │ ◀───  │ 5. SEO & Analytics     │ ◀─────────────────┤
-│ • Omnichannel Sched    │       │ • Flesch-Kincaid Grade │                   │
-│ • Multi-Network Post   │       │ • Keyword Density      │                   ▼
+│ • Omnichannel manifest │       │ • Flesch-Kincaid Grade │                   │
+│ • Platform formatting  │       │ • Keyword Density      │                   ▼
 └────────────────────────┘       └────────────────────────┘       ┌────────────────────────┐
                                                                   │ 4. Image Gen Agent     │
                                                                   │ • Cloudflare FLUX.1    │
-                                                                  │ • 1024x1024 PNG Banner │
+                                                                  │ • 1024×1024 PNG Banner │
                                                                   └────────────────────────┘
 ```
 
-### Agent Roles & Specifications:
+### Agent roles
 
 1. **Document Ingestion Agent**
-   - **Engine**: `pypdf`, `pdfplumber`, `python-docx`, TF-IDF Cosine Vector Store.
-   - **Function**: Tokenizes brand guidelines, pitch decks, and battlecards; indexes semantic chunks with stop-word penalty scoring for hallucination-free RAG grounding.
+   - **Engine:** `pypdf`, `python-docx`, Cloudflare vision model for images, TF-IDF cosine retrieval.
+   - **Function:** retrieves the most relevant passages from **the signed-in user's own documents** only. It can auto-detect the matching brand playbook, use one you select, or run with no grounding.
 2. **Market Research Agent**
-   - **Engine**: DuckDuckGo Search API & live SERP scrapers.
-   - **Function**: Scrapes real-time competitive positioning, market trends, and high-intent buyer friction points to ground campaign messaging.
+   - **Engine:** Google News RSS and the Wikipedia API.
+   - **Function:** collects recent headlines and background context about the campaign topic to ground messaging.
 3. **Copywriter Agent**
-   - **Engine**: Groq Cloud LPUs (`openai/gpt-oss-120b` & `openai/gpt-oss-20b`).
-   - **Function**: Synthesizes high-converting copy across channels: Viral Hooks, LinkedIn articles, Reddit threads, Blog editorials, Cold Email sequences, and Meta Ad copy.
+   - **Engine:** Groq Cloud LPUs (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`), with xAI Grok as an optional fallback.
+   - **Function:** writes channel-ready copy: hooks, LinkedIn, X, Reddit, blog, cold email and Meta ads.
 4. **Image Generation Agent**
-   - **Engine**: Cloudflare Workers AI (`@cf/black-forest-labs/flux-1-schnell`) with Eden AI / HuggingFace fallback.
-   - **Function**: Expands campaign directives into photorealistic prompts, executes edge diffusion, computes OpenCV clarity validation scores, and delivers 1024×1024 PNG creative banners.
+   - **Engine:** Cloudflare Workers AI (`@cf/black-forest-labs/flux-1-schnell`). Falls back to Eden AI, then Pollinations, then a stock photo.
+   - **Function:** turns the campaign into a photorealistic prompt, renders the banner, and scores image sharpness with Pillow.
 5. **SEO & Analytics Agent**
-   - **Engine**: Flesch-Kincaid scoring engine & semantic keyword density auditor.
-   - **Function**: Validates readability level (target Grade 8 for conversions), checks search intent alignment, and ensures organic LSI keyword distribution.
-6. **Social Publisher Agent (Omnichannel)**
-   - **Engine**: Universal connectors for LinkedIn, X (Twitter), Meta (Facebook & Instagram), Threads, YouTube Community, TikTok, Pinterest, Reddit, and Universal Webhooks (Zapier, Make, Slack, Discord).
-   - **Function**: Formats platform-specific character limits, adapts hashtag taxonomy, and schedules or broadcasts approved copy and visual assets across multiple channels simultaneously.
+   - **Engine:** `textstat` Flesch-Kincaid scoring and a keyword density auditor.
+   - **Function:** checks readability (Grade 8 target), search-intent alignment and keyword distribution.
+6. **Social Publisher Agent**
+   - **Engine:** connectors for LinkedIn, X, Facebook, Instagram, Threads, Reddit, Medium, Dev.to, WordPress, Discord, Slack and universal webhooks (Zapier, Make, Buffer).
+   - **Function:** adapts copy to each platform's limits and prepares or sends the broadcast. Channels without API credentials run in sandbox mode and return simulated receipts.
 
 ---
 
-## 💻 Tech Stack & Infrastructure
+## 💻 Tech Stack
 
 ### Frontend
-- **Framework**: Next.js 16 (App Router with Turbopack)
-- **Library**: React 19 (`react: ^19.2.8`, `react-dom: ^19.2.8`)
-- **Styling**: Tailwind CSS v4 (`@tailwindcss/postcss`) with custom cyber-card dark theme
-- **Animations**: Framer Motion (`framer-motion: ^13.2.0`)
-- **Icons**: Lucide React
-- **HTTP Client**: Axios with Bearer JWT interceptors & Server-Sent Events (SSE)
+- **Framework:** Next.js 16 (App Router, Turbopack)
+- **Library:** React 19
+- **Styling:** Tailwind CSS v4 with a custom dark "cyber-card" theme
+- **Animation & icons:** Framer Motion, Lucide React
+- **Markdown:** `react-markdown`, `remark-gfm`, `rehype-raw`
+- **HTTP:** Axios with a Bearer-token interceptor
+- **Hosting:** Vercel
 
 ### Backend
-- **Framework**: Python 3.11+ / FastAPI (Asynchronous REST API)
-- **Server**: Uvicorn with ASGI live reload
-- **LLM Engine**: Groq Cloud LPUs (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`)
-- **Image Diffusion**: Cloudflare Workers AI (`@cf/black-forest-labs/flux-1-schnell`)
-- **Vector Retrieval**: Custom in-memory & JSON persistent TF-IDF vector engine with cosine similarity & stop-word penalty filtering
-- **Document Extractors**: `pypdf`, `python-docx`, `beautifulsoup4`
-- **Search & Metrics**: DuckDuckGo Search API, `textstat` (Flesch-Kincaid readability scoring)
-- **Security**: Passlib (Bcrypt), Python-Jose (JWT authentication)
+- **Framework:** Python / FastAPI, served by Uvicorn
+- **Database:** PostgreSQL (Neon) via SQLAlchemy; falls back to local SQLite when `DATABASE_URL` is not set
+- **LLM:** Groq Cloud (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`); optional xAI Grok
+- **Images:** Cloudflare Workers AI FLUX.1, with Eden AI and Pollinations fallbacks
+- **Retrieval:** custom TF-IDF cosine engine (scikit-learn) with stop-word penalties, stored in the database and cached in memory
+- **Documents:** `pypdf`, `python-docx`, Pillow, `beautifulsoup4`
+- **Metrics:** `textstat`
+- **Auth & security:** `bcrypt` password hashing, `python-jose` JWTs, Google OAuth 2.0
+- **Email:** SMTP or Resend
+- **Hosting:** Render
 
 ---
 
-## 🖥️ Frontend Architecture & Workspaces
+## 🖥️ Frontend Pages
 
-### 1. Swarm Launcher Workspace (`/dashboard`)
-- **Campaign Control Panel**:
-  - Directives input textarea with starter presets (*"SaaS Launch"*, *"B2B Outbound"*, *"SEO Authority"*).
-  - Target audience, tone selector, and Multimodal Brief / Brand Playbook selector.
-  - Interactive **Launch Swarm** trigger with active execution state and telemetry.
-- **Topological Agent Grid**:
-  - Live interactive cards for each of the 6 agents showing `'Idle'`, pulsing `'Thinking...'`, or `'✓ Complete'`.
-- **Dual Copy Workspace**:
-  - **Clean Studio Mode**: Formatted channel tabs (Hooks, LinkedIn, Reddit, Blog, Email, Meta Ads) with one-click clipboard copy and toast notifications.
-  - **Raw Markdown Mode**: Complete unparsed markdown output with download actions.
-- **Multimodal Visual Studio**:
-  - Photorealistic 1024×1024 creative preview with gradient glassmorphism overlay.
-  - Model telemetry badge (`FLUX.1 Schnell (Edge)`), Clarity Validation score, and **Download Full PNG** action.
-- **Omnichannel Publisher Drawer**:
-  - Platform selector (LinkedIn, X, Meta, YouTube, TikTok, Pinterest, Reddit, Webhooks) with live character counter limits and instant broadcasting.
-- **Live Terminal Logs**:
-  - Real-time Server-Sent Events (SSE) stream capturing agent reasoning steps and timestamps.
+### 1. Swarm Launcher (`/dashboard`)
+- **Campaign console:** goal input with presets (*SaaS Launch*, *B2B Outbound*, *SEO Authority*), audience and tone, brand-playbook selector, multimodal brief upload, and target channels.
+- **Agent grid:** live cards for all 6 agents showing *Ready*, *Thinking…* or *Complete*. On phones it becomes a swipeable row.
+- **Output workspace:** stays in view while you scroll on desktop.
+  - **Clean Studio view:** per-channel tabs with one-click copy.
+  - **Raw Markdown view:** full output with download.
+  - **Visual Studio:** generated banner, model used, clarity score and PNG download.
+  - **Terminal:** step-by-step agent logs for the run.
+  - **SEO & Audit:** readability and keyword metrics.
+- **Omnichannel Broadcast:** choose platforms, schedule or send, and view receipts.
+- **Technical Site Auditor:** crawls a public URL and grades titles, meta descriptions, headings, images, social cards, security headers and links.
+- **Auto-save:** the workspace and campaign archives are saved to your account.
 
-### 2. Vector Knowledge Base (`/knowledge`)
-- **Grounding Document Uploader**: Drag-and-drop `.pdf`, `.docx`, and `.txt` files with automated chunking and tokenization.
-- **Indexed Assets Catalog**: File inventory showing chunk counts, size, and one-click deletion.
-- **Live Semantic Vector Search Tester**:
-  - Single-file scoping filter to query specific uploaded brand guides.
-  - Stop-word penalty filtering preventing false-positive query pollution.
-  - Cosine similarity ranking with highlighted matched semantic terms.
+### 2. Private Knowledge Base (`/knowledge`)
+- **Upload:** drag-and-drop `.pdf`, `.docx`, `.txt`, `.md`, `.png`, `.jpg`, `.webp`. Files are chunked and indexed, then the uploaded file is discarded (the extracted text is kept in the database).
+- **Your documents only:** each user sees, searches and deletes only their own documents.
+- **Semantic search tester:** query your knowledge base, optionally scoped to one file, and see ranked passages and an AI-synthesized answer.
 
-### 3. Admin & Telemetry Console (`/admin`)
-- Real-time token usage telemetry and chunk distribution.
-- Swarm infrastructure health and agent API status matrix.
-- Team collaborator seats and role assignment management.
+### 3. Admin Console (`/admin`)
+- System health, AI provider status, document and seat counts.
+- Invite operators (emails a temporary password), change roles, and revoke seats, within a **10-seat** workspace limit.
+
+### 4. Account pages
+- **Sign in / Register** with email and password or **Sign in with Google**.
+- **Password reset:** "Forgot password?" emails a single-use link (valid 1 hour) that opens a *Set New Password* form.
+- **Legal:** `/terms` and `/privacy`, linked from the sign-in and register pages.
 
 ---
 
-## 🔐 Role-Based Access Control (RBAC)
+## 🔐 Security & Data Privacy
 
-AgenticMarketer implements granular role-based routing through `AuthContext.jsx`:
-
-| Role Identifier | Role Title | Dashboard | Knowledge Base | Admin Console | Swarm Launch |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| `leader` | AI Swarm Leader / Workspace Owner | ✅ | ✅ | ✅ | ✅ |
-| `admin` | System & Infrastructure Administrator | ✅ | ✅ | ✅ | ✅ |
-| `marketer` | Growth & Content Marketer | ✅ | ✅ | ❌ | ✅ |
-| `backend_dev`| RAG / AI Backend Engineer | ✅ | ✅ | ❌ | ✅ |
-| `frontend_dev`| UI / UX Developer | ✅ | ✅ | ❌ | ✅ |
+- **Authentication on every API:** all knowledge base, swarm, publishing, workspace, SEO and stats endpoints require a valid JWT. Only `/ping`, `/api/health`, sign-in/registration and campaign images are public.
+- **Fresh account checks:** every request re-checks the account in the database, so deleted users lose access and role changes apply immediately.
+- **Per-user data isolation:**
+  - **Workspaces** belong to the signed-in user; client-supplied emails are ignored.
+  - **Knowledge bases are private**, and swarm grounding only reads the signed-in user's documents.
+  - **Publish history** shows your own dispatches (admins see the whole workspace).
+- **Google OAuth hardening:** after sign-in, users are only redirected to allow-listed frontend origins.
+- **SSRF protection:** the site auditor and custom webhooks refuse private, loopback and cloud-metadata addresses, and re-check every redirect.
+- **Password reset tokens** are single-use, expire after 1 hour, and cannot be used as login tokens.
+- **No analytics or tracking.** The browser stores only the login token.
+- **Generic error responses:** clients never see stack traces; details go to the server log.
 
 ---
 
-## 📡 Backend REST API Specification
+## 👥 Roles & Access Control
 
-The FastAPI backend exposes the following REST endpoints:
+| Role | Who | Dashboard & Knowledge Base | Admin Console | Manage admins |
+| :--- | :--- | :---: | :---: | :---: |
+| **Super Admin** | Emails listed in `ADMIN_EMAIL` / `ADMIN_EMAILS` | ✅ | ✅ | ✅ |
+| `admin` | Promoted by a Super Admin | ✅ | ✅ | ❌ |
+| `marketer` | Growth & content marketers | ✅ | ❌ | ❌ |
+| `user` | Default for self-registered accounts | ✅ | ❌ | ❌ |
+| `backend_dev` | AI / backend engineers | ✅ | ❌ | ❌ |
+| `frontend_dev` | UI / UX developers | ✅ | ❌ | ❌ |
+
+- Super Admins can't be demoted or deleted, and they're the only ones who can grant or revoke the `admin` role, so a mistaken promotion can always be undone.
+- Nobody can change their own role or delete their own account.
+- The workspace is capped at **10 seats**.
+
+---
+
+## 📡 Backend REST API
+
+Interactive docs are available at `/docs` (Swagger) and `/redoc` on the backend. 🔒 = requires a Bearer token.
+
+### System
+- `GET|HEAD /ping`, `/api/ping`: lightweight keep-alive probe (no database access).
+- `GET /api/health`: service health and AI provider configuration.
+- 🔒 `GET /api/stats`: document, chunk, campaign and seat counts.
+- `GET /api/swarm/images/{filename}`: serves generated campaign images.
 
 ### Authentication (`/api/auth`)
-- `POST /api/auth/register`: Create user account with workspace role.
-- `POST /api/auth/login`: Authenticate credentials, return JWT access token.
-- `GET /api/auth/me`: Retrieve current user profile and permission scopes.
+- `POST /register`, `POST /login`: create an account or sign in; returns a JWT.
+- `POST /forgot-password`: emails a password reset link.
+- `POST /reset-password`: sets a new password using the emailed token.
+- `GET /google/login`, `GET /google/callback`: Google OAuth 2.0 sign-in.
+- 🔒 `GET /me`: current user profile.
+- 🔒 `GET /users`: list workspace members (admins only).
 
-### Vector Knowledge Base & RAG (`/api/rag`)
-- `POST /api/rag/upload`: Upload `.pdf`, `.docx`, `.txt` grounding documents (`multipart/form-data`).
-- `GET /api/rag/documents`: List indexed brand assets, file sizes, and chunk statistics.
-- `DELETE /api/rag/documents/{id}`: Delete document and associated vector chunks.
-- `POST /api/rag/search`: Query semantic vector store with optional file scoping and stop-word filtering.
+### Admin (`/api/admin`), admins only
+- 🔒 `GET /users`, `POST /users/invite`, `PATCH /users/{id}/role`, `DELETE /users/{id}`
+- 🔒 `GET /system`, `GET /logs`
 
-### Swarm Orchestration (`/api/swarm`)
-- `POST /api/swarm/launch`: Execute 6-agent swarm pipeline with campaign directive and selected brand context.
-- `GET /api/swarm/stream/{execution_id}`: Server-Sent Events (SSE) stream for live agent logs and output typing.
-- `POST /api/swarm/abort`: Cancel running pipeline execution.
+### Knowledge Base (`/api/rag`), scoped to the signed-in user
+- 🔒 `POST /upload`: upload and index a document (`multipart/form-data`).
+- 🔒 `GET /documents`: list your documents.
+- 🔒 `DELETE /documents/{id}`: delete one of your documents and its chunks.
+- 🔒 `POST /query`: semantic search with an AI-synthesized answer.
+- 🔒 `POST /analyze-brief`: extract a campaign brief from a document or image (not stored).
 
-### Social Publishing (`/api/publish`)
-- `POST /api/publish/post`: Publish or schedule approved copy and visual assets across selected social channels.
-- `GET /api/publish/history`: Retrieve past omnichannel broadcast logs.
+### Swarm (`/api/swarm`)
+- 🔒 `POST /run-sync`: run the full pipeline and return the campaign bundle (used by the web app).
+- 🔒 `POST /launch` + `GET /stream/{run_id}`: start a run and stream progress as Server-Sent Events.
+- 🔒 `POST /abort/{run_id}`: stop a running pipeline.
+
+### Publishing (`/api/publish`)
+- 🔒 `GET /platforms`: supported channels.
+- 🔒 `POST /broadcast`: publish or schedule to selected channels.
+- 🔒 `GET /history`: dispatch history (your own; admins see all).
+
+### Workspace (`/api/workspace`)
+- 🔒 `GET /`, `POST /`: load or save your current campaign draft.
+- 🔒 `POST /reset`: clear the draft (keeps history).
+- 🔒 `GET /history`: your campaign archive.
+
+### SEO (`/api/seo`)
+- 🔒 `POST /audit`: technical SEO audit of a public URL.
 
 ---
 
@@ -221,71 +265,73 @@ The FastAPI backend exposes the following REST endpoints:
 
 ```
 AgenticMarketer-Automated-Marketing-Intelligence/
-├── .venv/                              # Python virtual environment
-├── Backend/                            # FastAPI Microservice Backend
+├── .github/workflows/
+│   └── keep-alive.yml                  # Pings the Render backend every 10 min
+├── backend/                            # FastAPI backend
 │   ├── app/
 │   │   ├── agents/
-│   │   │   └── swarm_pipeline.py       # 6-Agent Swarm Orchestration & Execution
+│   │   │   └── swarm_pipeline.py       # 6-agent swarm orchestration
 │   │   ├── core/
-│   │   │   ├── config.py               # Pydantic Settings & Environment Loading
-│   │   │   └── security.py             # JWT & Password Hash Utilities
+│   │   │   ├── config.py               # Settings & environment loading
+│   │   │   ├── security.py             # Password hashing, JWT, auth dependencies
+│   │   │   └── net_safety.py           # SSRF-safe outbound requests
 │   │   ├── rag/
-│   │   │   └── vector_store.py         # TF-IDF Cosine Vector Retrieval Engine
+│   │   │   └── vector_store.py         # Per-user TF-IDF retrieval engine
 │   │   ├── routers/
-│   │   │   ├── auth.py                 # Authentication & Role Routes
-│   │   │   ├── rag.py                  # Knowledge Base & Vector Search Endpoints
-│   │   │   ├── swarm.py                # Swarm Launch & SSE Stream Endpoints
-│   │   │   └── publish.py              # Social Publishing & History Endpoints
-│   │   └── main.py                     # FastAPI Application Entrypoint & CORS Setup
-│   ├── data/
-│   │   ├── uploads/                    # Grounding Files & Generated Campaign Images
-│   │   ├── rag_chunks.json             # Indexed Vector Chunks
-│   │   ├── rag_metadata.json           # File Metadata Registry
-│   │   └── workspaces.json             # Workspace State History
-│   └── requirements.txt                # Python Backend Dependencies
-├── frontend/                           # Next.js 16 Web Application
+│   │   │   ├── auth.py                 # Sign-in, Google OAuth, password reset
+│   │   │   ├── admin.py                # Users, roles, seats
+│   │   │   ├── rag.py                  # Knowledge base endpoints
+│   │   │   ├── swarm.py                # Swarm run / stream / abort
+│   │   │   ├── publish.py              # Omnichannel publishing & history
+│   │   │   ├── workspace.py            # Draft & archive persistence
+│   │   │   └── seo_auditor.py          # Technical site auditor
+│   │   ├── services/
+│   │   │   ├── email.py                # SMTP / Resend emails
+│   │   │   └── rag_prompts.py          # RAG answer sanitizing
+│   │   ├── database.py                 # SQLAlchemy models, init & migrations
+│   │   └── main.py                     # FastAPI app, CORS, system routes
+│   ├── data/uploads/images/            # Generated campaign images (runtime)
+│   ├── .env.example                    # Backend environment template
+│   └── requirements.txt                # Python dependencies
+├── frontend/                           # Next.js 16 web app
 │   ├── app/
-│   │   ├── admin/
-│   │   │   └── page.jsx                # Telemetry & Admin Console View
-│   │   ├── dashboard/
-│   │   │   └── page.jsx                # Swarm Launcher, Visual Studio & Publisher
-│   │   ├── knowledge/
-│   │   │   └── page.jsx                # Vector Knowledge Base & Search Tester
-│   │   ├── login/
-│   │   │   └── page.jsx                # Login View with Role Selection
-│   │   ├── register/
-│   │   │   └── page.jsx                # Registration View
-│   │   ├── layout.jsx                  # Root Layout, Theme & AuthProvider
-│   │   ├── page.jsx                    # Landing / Workspace Redirect
-│   │   └── globals.css                 # Tailwind CSS v4 Directives & Design Tokens
-│   ├── context/
-│   │   └── AuthContext.jsx             # User Session & JWT State Provider
-│   ├── utils/
-│   │   └── api.js                      # Axios Client with Bearer Interceptor
-│   ├── package.json                    # Frontend Dependencies & Scripts
-│   └── next.config.mjs                 # Next.js Configuration
-├── LICENSE                             # MIT License
-└── README.md                           # System Documentation
+│   │   ├── dashboard/page.jsx          # Swarm Launcher, Visual Studio, Publisher
+│   │   ├── knowledge/page.jsx          # Private knowledge base & search tester
+│   │   ├── admin/page.jsx              # Admin console
+│   │   ├── login/page.jsx              # Sign in + password reset
+│   │   ├── register/page.jsx           # Registration
+│   │   ├── terms/page.jsx              # Terms of Service
+│   │   ├── privacy/page.jsx            # Privacy Policy
+│   │   ├── auth/ …                     # Google OAuth callback handling
+│   │   ├── layout.jsx                  # Root layout & AuthProvider
+│   │   └── globals.css                 # Tailwind v4 theme
+│   ├── components/                     # Navbar, ProtectedRoute, RAGAnswer, LegalPage
+│   ├── context/AuthContext.jsx         # Session state
+│   ├── utils/api.js                    # Axios client
+│   └── package.json
+├── run.py                              # Backend entrypoint (used by Render)
+├── requirements.txt                    # Points to backend/requirements.txt
+├── LICENSE
+└── README.md
 ```
 
 ---
 
-## ⚡ Getting Started & Installation
+## ⚡ Getting Started
 
 ### Prerequisites
-- **Node.js**: v18.0+ or v20.0+
-- **Python**: 3.11+
-- **Package Manager**: `npm`
+- **Node.js** 20+
+- **Python** 3.11+
+- **npm**
 
-### 1. Clone the Repository
+### 1. Clone the repository
 ```bash
 git clone https://github.com/Mann-Patel85/AgenticMarketer-Automated-Marketing-Intelligence.git
 cd AgenticMarketer-Automated-Marketing-Intelligence
 ```
 
-### 2. Backend Setup (FastAPI)
+### 2. Backend setup
 ```bash
-# Create and activate virtual environment
 python -m venv .venv
 
 # Windows:
@@ -293,92 +339,104 @@ python -m venv .venv
 # Linux/macOS:
 source .venv/bin/activate
 
-# Install backend dependencies
-pip install -r backend/requirements.txt
+pip install -r requirements.txt
 ```
 
-### 3. Frontend Setup (Next.js)
+Copy `backend/.env.example` to `.env` in the project root and fill in your values (see [Environment Configuration](#-environment-configuration)). Without `DATABASE_URL`, the backend uses a local SQLite database automatically.
+
+### 3. Frontend setup
 ```bash
-# Navigate to the frontend directory
 cd frontend
-
-# Install dependencies
 npm install
-
-# Return to root
 cd ..
 ```
 
-### 4. Running the Application Locally
+### 4. Run locally
 
-Start both servers in separate terminal sessions:
-
-**Terminal 1 — Backend (FastAPI on Port 8000):**
+**Terminal 1: backend (port 8000)**
 ```bash
-python -m uvicorn backend.app.main:app --reload --port 8000
+python run.py
 ```
 
-**Terminal 2 — Frontend (Next.js on Port 3000):**
+**Terminal 2: frontend (port 3000)**
 ```bash
 cd frontend
 npm run dev
 ```
 
-Open `http://localhost:3000` in your web browser.
+Open http://localhost:3000. The admin account from `ADMIN_EMAIL` / `ADMIN_PASSWORD` is created on first start.
 
 ---
 
 ## 🔑 Environment Configuration
 
-Create a `.env` file in the root project directory:
+### Backend (`.env` in the project root, or Render environment variables)
 
-```env
-# Groq Cloud LPU AI (Primary High-Speed Text Engine)
-GROQ_API_KEY=your_groq_api_key_here
-GROQ_MODEL=openai/gpt-oss-120b
-GROQ_FAST_MODEL=openai/gpt-oss-20b
+See [`backend/.env.example`](backend/.env.example) for the full template.
 
-# Cloudflare Workers AI (Primary Image Generation - FLUX.1 schnell)
-CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id_here
-CLOUDFLARE_API_TOKEN=your_cloudflare_api_token_here
-CLOUDFLARE_IMAGE_MODEL=@cf/black-forest-labs/flux-1-schnell
+| Variable | Required | Purpose |
+| :--- | :---: | :--- |
+| `JWT_SECRET` | ✅ | Signs login tokens. **If unset, every restart logs all users out.** Generate with `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `DATABASE_URL` | ✅ (prod) | PostgreSQL connection string (e.g. Neon). Omit locally to use SQLite. |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | ✅ | Primary Super Admin. The password is only applied when the account is first created. |
+| `ADMIN_EMAILS` | | Extra Super Admins (comma-separated). |
+| `ADMIN_PASSWORD_RESET_ON_BOOT` | | Set `true` for one deploy to force `ADMIN_PASSWORD` back onto the account. |
+| `FRONTEND_PROD_URL` | ✅ (prod) | Your frontend URL, used for CORS, OAuth and email links. |
+| `FRONTEND_ALLOWED_ORIGINS` | | Extra frontend origins allowed as Google sign-in redirect targets. |
+| `BACKEND_PROD_URL` | | Public backend URL, used to build the OAuth callback. |
+| `GROQ_API_KEY` | ✅ | Copywriting and RAG answers. `GROQ_MODEL` / `GROQ_FAST_MODEL` override the models. |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | ✅ | FLUX.1 image generation and image analysis. |
+| `EDEN_AI_API_KEY`, `GROK_API_KEY` / `XAI_API_KEY` | | Optional image and text fallbacks. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | | Enable Sign in with Google. `GOOGLE_REDIRECT_URI` optionally overrides the callback URL. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAILS_FROM_EMAIL` or `RESEND_API_KEY` | | Welcome, invite and password reset emails. Without them, emails are only logged. |
+| `LINKEDIN_*`, `TWITTER_*`, `META_*`, `INSTAGRAM_ACCOUNT_ID`, `THREADS_*`, `REDDIT_*`, `DISCORD_WEBHOOK_URL`, `SLACK_WEBHOOK_URL`, … | | Live publishing credentials. Channels without them run in sandbox mode. |
 
-# Authentication & Security
-JWT_SECRET=your_secure_random_256_bit_secret_token
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=1440
+### Frontend (Vercel environment variables)
 
-# Eden AI (Optional Image Generation Fallback)
-EDEN_AI_API_KEY=
-```
+| Variable | Purpose |
+| :--- | :--- |
+| `NEXT_PUBLIC_API_URL` | Backend URL, e.g. `https://<your-service>.onrender.com` |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | Contact address shown on the Terms and Privacy pages |
 
 ---
 
-## 🚀 System Capabilities & Roadmap
+## ☁️ Deployment (Vercel + Render + Neon)
 
-- [x] **Next.js 16 + React 19 Frontend**: Enterprise cyber-card dashboard styled with Tailwind CSS v4 and Framer Motion.
-- [x] **6-Agent Swarm Pipeline**: Orchestrates Ingestion, Research, Copywriter, Image Generation, SEO, and Publisher agents.
-- [x] **Groq LPU Acceleration**: High-throughput copy synthesis delivering multi-channel bundles in seconds.
-- [x] **Cloudflare FLUX.1 Edge Diffusion**: Photorealistic 1024×1024 visuals with OpenCV clarity validation scores.
-- [x] **RAG Vector Knowledge Base**: TF-IDF cosine retrieval with stop-word penalty filtering and single-file scoped search.
-- [x] **Clean Studio & Markdown Views**: Formatted channel assets (Hooks, LinkedIn, Reddit, Blog, Email, Ads) with one-click copy.
-- [x] **Omnichannel Publishing Engine**: Live broadcasting integration across LinkedIn, X, Meta, YouTube, TikTok, Reddit, and Webhooks.
-- [ ] **Multi-Brand Workspace Partitioning**: Isolated vector collections and brand voice configurations per enterprise client.
-- [ ] **Direct Social OAuth2 Live Tokens**: Native one-click OAuth authorization flows for client social profiles.
+1. **Database:** create a Neon PostgreSQL database and copy its connection string into `DATABASE_URL`. Tables are created and migrated automatically on startup.
+2. **Backend (Render):** create a Web Service from this repo with the start command `python run.py`, and add the backend environment variables above.
+3. **Frontend (Vercel):** import the `frontend/` directory, and set `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_CONTACT_EMAIL`.
+4. **Google sign-in:** in Google Cloud Console, add `https://<backend>/api/auth/google/callback` (or your `GOOGLE_REDIRECT_URI`) as an authorized redirect URI. On the OAuth consent screen, add `https://<frontend>/privacy` and `https://<frontend>/terms`.
+
+### Keeping the Render backend awake (free tier)
+
+Render's free tier spins the backend down after 15 minutes of inactivity, and the next request then waits 50s–2min for a cold start. To avoid that:
+
+1. **Ping endpoint:** `GET` or `HEAD` `https://<your-service>.onrender.com/ping` returns `{"status":"ok"}` without touching the database.
+2. **Uptime monitor (primary):** create a free HTTP(s) monitor on [UptimeRobot](https://uptimerobot.com) or [cron-job.org](https://cron-job.org) pointing at `/ping` every 5–10 minutes.
+3. **GitHub Actions (backup):** [`.github/workflows/keep-alive.yml`](.github/workflows/keep-alive.yml) pings every 10 minutes. Add a repository secret `RENDER_BACKEND_URL` to enable it. GitHub may delay scheduled runs and disables them after 60 days without repository activity.
+4. **Frontend warm-up:** the web app sends a `/ping` on load, so a sleeping backend starts booting before the user does anything.
+
+> Render gives 750 free instance hours per month per workspace. One always-on service uses about 744 hours, so keep only **one** free web service awake per account.
+
+---
+
+## 🚀 Capabilities & Roadmap
+
+- [x] **6-agent swarm pipeline:** ingestion, research, copywriting, image generation, SEO and publishing.
+- [x] **Groq LPU copywriting** with multi-channel bundles.
+- [x] **Cloudflare FLUX.1 visuals** with fallbacks and clarity scoring.
+- [x] **Private per-user knowledge bases** with TF-IDF retrieval and single-file scoped search.
+- [x] **Omnichannel publishing** with database-backed audit history.
+- [x] **Email + Google sign-in**, password reset, and an admin console with a 10-seat limit.
+- [x] **Security hardening:** authenticated APIs, per-user isolation, SSRF protection, OAuth redirect allow-listing.
+- [x] **Responsive UI** for desktop, tablet and phone, plus Terms and Privacy pages.
+- [ ] **Account self-service:** change password and delete account from the app.
+- [ ] **Usage metering:** track Groq token usage per user.
+- [ ] **Direct social OAuth:** one-click connection of each user's own social profiles.
+- [ ] **Multi-brand workspaces:** separate brand voices and knowledge bases per client.
 
 ---
 
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
-
-## ⏰ Keeping the Render Backend Awake (Free Tier)
-
-Render's free tier spins the backend down after 15 minutes of inactivity, and the next request then waits 50s–2min for a cold start. To avoid that:
-
-1. **Ping endpoint**: `GET`/`HEAD` `https://<your-service>.onrender.com/ping` (also `/api/ping`) returns `{"status":"ok"}` without touching the database or disk.
-2. **Uptime monitor (primary)**: create a free HTTP(s) monitor on [UptimeRobot](https://uptimerobot.com) or [cron-job.org](https://cron-job.org) pointing at `/ping` with a 10-minute interval.
-3. **GitHub Actions (backup)**: `.github/workflows/keep-alive.yml` pings every 10 minutes. Add a repository secret `RENDER_BACKEND_URL` (e.g. `https://<your-service>.onrender.com`) to enable it.
-4. **Frontend warm-up**: the Vercel app sends a `/ping` on load, so even if the backend is asleep it starts booting before the user does anything.
-
-> Render gives 750 free instance hours/month per workspace. One always-on service uses ~744h, so keep only **one** free web service awake per account.
