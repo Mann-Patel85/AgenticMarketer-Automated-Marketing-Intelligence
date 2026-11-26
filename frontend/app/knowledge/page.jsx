@@ -17,7 +17,6 @@ import {
     Loader2,
     X,
     Sliders,
-    Zap,
     Copy,
     Check,
     Layers,
@@ -136,7 +135,7 @@ export default function KnowledgePage() {
                 await uploadDocument(stagedFiles[i]);
                 uploadedCount++;
             }
-            setNotification(`Successfully ingested ${uploadedCount} document(s) into ChromaDB vector memory!`);
+            setNotification(`Successfully ingested ${uploadedCount} document(s) into your knowledge base.`);
             setStagedFiles([]);
             await loadDocuments();
             setTimeout(() => setNotification(''), 5000);
@@ -307,7 +306,7 @@ export default function KnowledgePage() {
                         </div>
                         <div className="flex items-center gap-2">
                             <span className="px-3 py-1 bg-indigo-500/10 border border-indigo-500/30 rounded-full text-xs font-mono text-indigo-300">
-                                FAISS / ChromaDB
+                                Private to your account
                             </span>
                         </div>
                     </div>
@@ -321,7 +320,7 @@ export default function KnowledgePage() {
                                     Upload & Ingest Brand Guidelines
                                 </h2>
                             </div>
-                            <span className="text-[11px] font-mono text-cyan-300 bg-cyan-950/60 border border-cyan-800/60 px-3 py-1 rounded-full">
+                            <span className="text-xs font-mono text-cyan-300 bg-cyan-950/60 border border-cyan-800/60 px-3 py-1 rounded-full">
                                 PDF • DOCX • TXT • MD • PNG • JPG • WEBP
                             </span>
                         </div>
@@ -352,7 +351,7 @@ export default function KnowledgePage() {
                                 <p className="text-xs font-bold text-slate-200">
                                     Click to browse files or drag & drop here
                                 </p>
-                                <p className="text-[11px] text-slate-400 max-w-md">
+                                <p className="text-xs text-slate-400 max-w-md">
                                     Stage your documents and visual assets for chunking, embedding, OCR vision, and vector storage.
                                 </p>
                             </div>
@@ -368,7 +367,7 @@ export default function KnowledgePage() {
                                     <button
                                         type="button"
                                         onClick={() => setStagedFiles([])}
-                                        className="text-[10px] text-slate-500 hover:text-slate-300 transition cursor-pointer"
+                                        className="text-xs text-slate-500 hover:text-slate-300 transition cursor-pointer"
                                     >
                                         Clear all
                                     </button>
@@ -379,7 +378,7 @@ export default function KnowledgePage() {
                                             <div className="flex items-center gap-2 min-w-0 pr-2">
                                                 <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
                                                 <span className="text-slate-200 font-medium truncate text-xs">{file.name}</span>
-                                                <span className="text-slate-500 text-[10px]">({(file.size / 1024).toFixed(1)} KB)</span>
+                                                <span className="text-slate-500 text-xs">({(file.size / 1024).toFixed(1)} KB)</span>
                                             </div>
                                             <button
                                                 type="button"
@@ -402,7 +401,7 @@ export default function KnowledgePage() {
                                     }`}
                                 >
                                     {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                                    <span>{isUploading ? 'Chunking & Embedding into Vectors...' : 'Ingest Document into ChromaDB'}</span>
+                                    <span>{isUploading ? 'Chunking & Embedding into Vectors...' : 'Add to Knowledge Base'}</span>
                                 </button>
                             </div>
                         )}
@@ -427,7 +426,7 @@ export default function KnowledgePage() {
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
                             <div className="flex items-center gap-2">
                                 <h2 className="text-sm font-bold text-white">Indexed Grounding Assets</h2>
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                                     {filteredDocuments.length} live files
                                 </span>
                             </div>
@@ -453,7 +452,7 @@ export default function KnowledgePage() {
                             <div className="text-center py-12 text-slate-500 space-y-2">
                                 <Database className="w-8 h-8 text-slate-600 mx-auto" />
                                 <p className="text-xs font-medium">No grounding assets found in vector store.</p>
-                                <p className="text-[11px] text-slate-600">Upload a .pdf, .docx, .txt, or .md file above to ground your agents.</p>
+                                <p className="text-xs text-slate-600">Upload a .pdf, .docx, .txt, or .md file above to ground your agents.</p>
                             </div>
                         ) : (
                             <div className="space-y-3">
@@ -476,18 +475,18 @@ export default function KnowledgePage() {
                                                     <div className="flex items-center gap-2">
                                                         <h3 className="text-xs font-semibold text-slate-200 truncate">{doc.name}</h3>
                                                         {isImageDoc && (
-                                                            <span className="px-2 py-0.2 rounded-md bg-pink-500/15 border border-pink-500/30 text-[9px] font-mono font-bold text-pink-300">
+                                                            <span className="px-2 py-0.2 rounded-md bg-pink-500/15 border border-pink-500/30 text-[11px] font-mono font-bold text-pink-300">
                                                                 Visual Asset
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <p className="text-[10px] text-slate-400 mt-0.5">
+                                                    <p className="text-xs text-slate-400 mt-0.5">
                                                         {doc.size} • <span className="text-indigo-400 font-mono">{doc.chunks} semantic chunks</span> • {doc.updated}
                                                     </p>
                                                 </div>
                                             </div>
                                             <div className="flex items-center space-x-3 shrink-0">
-                                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-[10px] font-medium flex items-center gap-1.5">
+                                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-medium flex items-center gap-1.5">
                                                 <CheckCircle2 className="w-3.5 h-3.5" /> {doc.status}
                                             </span>
                                             <button
@@ -519,12 +518,9 @@ export default function KnowledgePage() {
                                             <h2 className="text-base font-extrabold text-white tracking-tight">
                                                 Live Semantic Vector Search Tester
                                             </h2>
-                                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                                            <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
                                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                                 Live
-                                            </span>
-                                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
-                                                <Zap className="w-3 h-3 text-cyan-400" /> Hybrid Cosine + Dense
                                             </span>
                                         </div>
                                         <p className="text-xs text-slate-400 mt-1 max-w-xl">
@@ -571,7 +567,7 @@ export default function KnowledgePage() {
                                 <div className="p-4 bg-slate-950/80 border border-violet-500/20 rounded-2xl space-y-2">
                                     <div className="flex items-center gap-2 mb-3">
                                         <History className="w-3.5 h-3.5 text-violet-400" />
-                                        <span className="text-[11px] font-semibold text-violet-300 uppercase tracking-wider">Recent Queries</span>
+                                        <span className="text-xs font-semibold text-violet-300 uppercase tracking-wider">Recent Queries</span>
                                     </div>
                                     <div className="space-y-1.5">
                                         {queryHistory.map((h, i) => (
@@ -589,14 +585,14 @@ export default function KnowledgePage() {
                                                     <Search className="w-3 h-3 text-slate-500 shrink-0" />
                                                     <span className="text-xs text-slate-300 truncate group-hover:text-white transition">{h.query}</span>
                                                     {h.doc && h.doc !== 'All Documents' && (
-                                                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 truncate max-w-[140px]">
+                                                        <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 truncate max-w-[140px]">
                                                             {h.doc}
                                                         </span>
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
-                                                    <span className="text-[10px] font-mono text-indigo-400">{h.count} chunks</span>
-                                                    <span className="text-[10px] font-mono text-slate-500">{h.latency}ms</span>
+                                                    <span className="text-xs font-mono text-indigo-400">{h.count} chunks</span>
+                                                    <span className="text-xs font-mono text-slate-500">{h.latency}ms</span>
                                                 </div>
                                             </button>
                                         ))}
@@ -608,7 +604,7 @@ export default function KnowledgePage() {
                             {showSettings && (
                                 <div className="p-4 bg-slate-950/90 border border-indigo-500/20 rounded-2xl grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                                     <div className="space-y-1.5">
-                                        <label className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+                                        <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                                             <span>Top-K Chunks:</span>
                                             <span className="font-mono text-indigo-400 font-bold">{topK}</span>
                                         </label>
@@ -618,7 +614,7 @@ export default function KnowledgePage() {
                                                     key={k}
                                                     type="button"
                                                     onClick={() => setTopK(k)}
-                                                    className={`flex-1 py-1 rounded-lg font-mono text-[11px] transition ${
+                                                    className={`flex-1 py-1 rounded-lg font-mono text-xs transition ${
                                                         topK === k
                                                             ? 'bg-indigo-600 text-white font-bold'
                                                             : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
@@ -631,7 +627,7 @@ export default function KnowledgePage() {
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+                                        <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                                             <span>Relevance Cutoff:</span>
                                             <span className="font-mono text-indigo-400 font-bold">{minScoreThreshold}%</span>
                                         </label>
@@ -647,7 +643,7 @@ export default function KnowledgePage() {
                                     </div>
 
                                     <div className="space-y-1.5 flex flex-col justify-between">
-                                        <label className="flex items-center gap-2 cursor-pointer text-[11px] text-slate-300 select-none">
+                                        <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300 select-none">
                                             <input
                                                 type="checkbox"
                                                 checked={highlightKeywords}
@@ -656,7 +652,7 @@ export default function KnowledgePage() {
                                             />
                                             <span>Highlight Query Matches</span>
                                         </label>
-                                        <div className="text-[10px] text-slate-500 space-y-0.5">
+                                        <div className="text-xs text-slate-500 space-y-0.5">
                                             <div>Index: <strong className="text-slate-400">{totalChunksIndexed} chunks</strong> in memory</div>
                                             <div>Documents: <strong className="text-slate-400">{documents.length} files</strong> indexed</div>
                                         </div>
@@ -666,7 +662,7 @@ export default function KnowledgePage() {
 
                             {/* Preset Queries */}
                             <div className="space-y-2">
-                                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                                     <Target className="w-3.5 h-3.5 text-indigo-400" /> Grounding Directive Presets:
                                 </span>
                                 <div className="flex flex-wrap gap-2">
@@ -675,7 +671,7 @@ export default function KnowledgePage() {
                                             key={idx}
                                             type="button"
                                             onClick={(e) => handleTestQuery(e, p.query)}
-                                            className="px-3 py-1.5 rounded-xl bg-slate-950/80 hover:bg-indigo-600/20 border border-slate-800 hover:border-indigo-500/40 text-[11px] font-medium text-slate-300 hover:text-indigo-300 transition cursor-pointer active:scale-[0.97]"
+                                            className="px-3 py-1.5 rounded-xl bg-slate-950/80 hover:bg-indigo-600/20 border border-slate-800 hover:border-indigo-500/40 text-xs font-medium text-slate-300 hover:text-indigo-300 transition cursor-pointer active:scale-[0.97]"
                                         >
                                             {p.label}
                                         </button>
@@ -700,17 +696,17 @@ export default function KnowledgePage() {
                                                     Target Search File:
                                                 </span>
                                                 {selectedSearchDoc !== 'ALL' ? (
-                                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1.5 shadow-sm">
+                                                    <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1.5 shadow-sm">
                                                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                                                         Isolated: {selectedSearchDoc}
                                                     </span>
                                                 ) : (
-                                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono text-slate-400 bg-slate-900 border border-slate-800">
+                                                    <span className="px-2.5 py-0.5 rounded-full text-xs font-mono text-slate-400 bg-slate-900 border border-slate-800">
                                                         All Files ({documents.length} indexed)
                                                     </span>
                                                 )}
                                             </div>
-                                            <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                                            <p className="text-xs text-slate-400 mt-0.5 truncate">
                                                 {selectedSearchDoc !== 'ALL'
                                                     ? `Vector search strictly scoped to "${selectedSearchDoc}". Results from other files are suppressed.`
                                                     : 'Searching concurrently across all indexed PDFs, brand playbooks, and assets.'}
@@ -750,11 +746,11 @@ export default function KnowledgePage() {
                                 {/* Quick Clickable File Pills */}
                                 {documents.length > 1 && (
                                     <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-slate-800/80">
-                                        <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider mr-1">Quick Scope:</span>
+                                        <span className="text-xs font-mono text-slate-500 uppercase tracking-wider mr-1">Quick Scope:</span>
                                         <button
                                             type="button"
                                             onClick={() => handleDocFilterChange('ALL')}
-                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer ${
+                                            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer ${
                                                 selectedSearchDoc === 'ALL'
                                                     ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/30 border border-indigo-400'
                                                     : 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200'
@@ -770,7 +766,7 @@ export default function KnowledgePage() {
                                                     key={doc.id || fname}
                                                     type="button"
                                                     onClick={() => handleDocFilterChange(fname)}
-                                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer truncate max-w-[240px] flex items-center gap-1.5 ${
+                                                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer truncate max-w-[240px] flex items-center gap-1.5 ${
                                                         isSelected
                                                             ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/30 border border-indigo-400'
                                                             : 'bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200'
@@ -839,11 +835,11 @@ export default function KnowledgePage() {
                                     <div className="space-y-0.5 min-w-0">
                                         <div className="flex items-center gap-2">
                                             <span className="font-bold text-amber-300">Conversational Query Detected</span>
-                                            <span className="px-2 py-0.2 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                            <span className="px-2 py-0.2 rounded-full text-xs font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
                                                 Stop-Words Filtered
                                             </span>
                                         </div>
-                                        <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                                        <p className="text-xs text-amber-200/80 leading-relaxed">
                                             Your query contains conversational filler words (<strong className="text-amber-100">{stopWordsInQuery.slice(0, 3).join(', ')}</strong>). 
                                             The backend TF-IDF vectorizer automatically strips these to prevent weight dilution. For peak precision, concise phrases like <em className="text-white">"mission statement"</em> or <em className="text-white">"corporate boilerplate"</em> maximize relevance scores.
                                         </p>
@@ -856,22 +852,22 @@ export default function KnowledgePage() {
                                 <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-950/70 border border-slate-800/80 rounded-2xl text-xs">
                                     <div className="flex items-center gap-4 flex-wrap">
                                         {queryLatencyMs !== null && (
-                                            <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[11px]">
+                                            <div className="flex items-center gap-1.5 text-slate-400 font-mono text-xs">
                                                 <Clock className="w-3.5 h-3.5 text-indigo-400" />
                                                 <span>Latency: <strong className="text-slate-200">{queryLatencyMs} ms</strong></span>
                                             </div>
                                         )}
-                                        <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[11px]">
+                                        <div className="flex items-center gap-1.5 text-slate-400 font-mono text-xs">
                                             <Filter className="w-3.5 h-3.5 text-indigo-400" />
                                             <span>File Scope: <strong className={selectedSearchDoc !== 'ALL' ? 'text-indigo-300 font-semibold' : 'text-slate-200'}>
                                                 {selectedSearchDoc !== 'ALL' ? selectedSearchDoc : 'All Documents'}
                                             </strong></span>
                                         </div>
-                                        <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[11px]">
+                                        <div className="flex items-center gap-1.5 text-slate-400 font-mono text-xs">
                                             <Layers className="w-3.5 h-3.5 text-indigo-400" />
                                             <span>Matches: <strong className="text-slate-200">{filteredQueryResults?.length || 0} chunks</strong></span>
                                         </div>
-                                        <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[11px]">
+                                        <div className="flex items-center gap-1.5 text-slate-400 font-mono text-xs">
                                             <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
                                             <span>Top Score: <strong className="text-emerald-400">{
                                                 filteredQueryResults && filteredQueryResults[0]
@@ -879,7 +875,7 @@ export default function KnowledgePage() {
                                                     : '0%'
                                             }</strong></span>
                                         </div>
-                                        <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[11px]">
+                                        <div className="flex items-center gap-1.5 text-slate-400 font-mono text-xs">
                                             <BarChart3 className="w-3.5 h-3.5 text-violet-400" />
                                             <span>Avg Score: <strong className="text-violet-400">{
                                                 filteredQueryResults && filteredQueryResults.length > 0
@@ -913,7 +909,7 @@ export default function KnowledgePage() {
                                                         AI Grounded Executive Answer
                                                     </span>
                                                 </div>
-                                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                                <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                                                     {selectedSearchDoc !== 'ALL' ? `Filtered to: ${selectedSearchDoc}` : 'RAG Intelligence Engine'}
                                                 </span>
                                             </div>
@@ -927,7 +923,7 @@ export default function KnowledgePage() {
                                             <span>Retrieved Semantic Grounding Context ({filteredQueryResults?.length || 0}):</span>
                                         </p>
                                         {selectedSearchDoc !== 'ALL' && (
-                                            <span className="text-[11px] font-mono text-indigo-300 bg-indigo-950/60 border border-indigo-800/60 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+                                            <span className="text-xs font-mono text-indigo-300 bg-indigo-950/60 border border-indigo-800/60 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
                                                 <Filter className="w-3 h-3 text-cyan-400" />
                                                 File: <span className="font-semibold text-white">{selectedSearchDoc}</span>
                                             </span>
@@ -981,20 +977,20 @@ export default function KnowledgePage() {
                                                 >
                                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-4 pb-3">
                                                         <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                                            <span className="px-2.5 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-300 font-mono text-[11px] font-semibold border border-indigo-500/20 truncate max-w-[180px]">
+                                                            <span className="px-2.5 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-300 font-mono text-xs font-semibold border border-indigo-500/20 truncate max-w-[180px]">
                                                                 {r.doc_name}
                                                             </span>
                                                             {r.text && (r.text.includes('[Visual Asset') || r.text.includes('Detected Palette') || r.text.includes('=== BRAND VISUAL')) && (
-                                                                <span className="px-2 py-0.5 rounded-lg bg-pink-500/15 text-pink-300 font-mono text-[10px] font-bold border border-pink-500/30 flex items-center gap-1">
+                                                                <span className="px-2 py-0.5 rounded-lg bg-pink-500/15 text-pink-300 font-mono text-xs font-bold border border-pink-500/30 flex items-center gap-1">
                                                                     <ImageIcon className="w-3 h-3 text-pink-400" /> Multimodal Vision Chunk
                                                                 </span>
                                                             )}
-                                                            <span className="text-[11px] font-mono text-slate-500">Chunk #{r.chunk_index}</span>
-                                                            <span className="text-[10px] text-slate-600">• {wordCount} words</span>
+                                                            <span className="text-xs font-mono text-slate-500">Chunk #{r.chunk_index}</span>
+                                                            <span className="text-xs text-slate-600">• {wordCount} words</span>
                                                         </div>
 
                                                         <div className="flex items-center gap-2 shrink-0">
-                                                            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold flex items-center gap-1.5 border ${scoreColor}`}>
+                                                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold flex items-center gap-1.5 border ${scoreColor}`}>
                                                                 <span className={`w-1.5 h-1.5 rounded-full ${isOptimal ? 'bg-emerald-400' : isGood ? 'bg-amber-400' : 'bg-indigo-400'}`} />
                                                                 {scorePct}% Match
                                                             </span>
@@ -1002,7 +998,7 @@ export default function KnowledgePage() {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleCopyChunk(r.text, idx)}
-                                                                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 text-[11px] font-medium transition flex items-center gap-1.5 cursor-pointer"
+                                                                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
                                                                 title="Copy chunk text"
                                                             >
                                                                 {copiedChunkIdx === idx ? (
@@ -1030,7 +1026,7 @@ export default function KnowledgePage() {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => toggleChunkExpand(idx)}
-                                                                className="mt-2 flex items-center gap-1 text-[11px] font-medium text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
+                                                                className="mt-2 flex items-center gap-1 text-xs font-medium text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
                                                             >
                                                                 {isExpanded ? (
                                                                     <><ChevronUp className="w-3.5 h-3.5" /><span>Collapse chunk</span></>
@@ -1051,7 +1047,7 @@ export default function KnowledgePage() {
                                 <div className="p-8 text-center border border-dashed border-slate-800/80 rounded-2xl space-y-2">
                                     <Sparkles className="w-6 h-6 text-indigo-400 mx-auto" />
                                     <p className="text-xs font-medium text-slate-400">Run a query to test your vector knowledge base</p>
-                                    <p className="text-[11px] text-slate-600">
+                                    <p className="text-xs text-slate-600">
                                         Use the presets above or type a custom directive to test grounding context.
                                     </p>
                                 </div>

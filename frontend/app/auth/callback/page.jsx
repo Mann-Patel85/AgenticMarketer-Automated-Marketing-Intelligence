@@ -103,7 +103,7 @@ function CallbackContent() {
                         </div>
                         <h2 className="text-base font-bold text-white">OAuth Error</h2>
                         <p className="text-xs text-rose-300">{errorMessage}</p>
-                        <p className="text-[11px] text-slate-500">Redirecting to sign in...</p>
+                        <p className="text-xs text-slate-500">Redirecting to sign in...</p>
                     </div>
                 ) : (
                     <div className="space-y-3">

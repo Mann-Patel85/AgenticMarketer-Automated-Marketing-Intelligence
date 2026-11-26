@@ -27,7 +27,7 @@ export default function RAGAnswer({ content, className = '' }) {
                         </div>
                     ),
                     thead: ({ node, ...props }) => (
-                        <thead className="bg-gradient-to-r from-indigo-950/90 to-slate-900 border-b border-indigo-500/30 text-indigo-200 uppercase tracking-wider text-[11px] font-semibold" {...props} />
+                        <thead className="bg-gradient-to-r from-indigo-950/90 to-slate-900 border-b border-indigo-500/30 text-indigo-200 uppercase tracking-wider text-xs font-semibold" {...props} />
                     ),
                     tbody: ({ node, ...props }) => (
                         <tbody className="divide-y divide-indigo-950/50" {...props} />
@@ -73,10 +73,10 @@ export default function RAGAnswer({ content, className = '' }) {
                         <em className="text-slate-200 italic" {...props} />
                     ),
                     blockquote: ({ node, ...props }) => (
-                        <blockquote className="my-3 pl-3 py-1.5 border-l-2 border-indigo-500 bg-indigo-950/30 rounded-r-lg text-slate-300 italic text-[11px]" {...props} />
+                        <blockquote className="my-3 pl-3 py-1.5 border-l-2 border-indigo-500 bg-indigo-950/30 rounded-r-lg text-slate-300 italic text-xs" {...props} />
                     ),
                     code: ({ node, inline, ...props }) => (
-                        <code className="px-1.5 py-0.5 rounded font-mono text-[11px] bg-indigo-950/80 border border-indigo-500/30 text-indigo-300 font-medium" {...props} />
+                        <code className="px-1.5 py-0.5 rounded font-mono text-xs bg-indigo-950/80 border border-indigo-500/30 text-indigo-300 font-medium" {...props} />
                     ),
                     hr: ({ node, ...props }) => (
                         <hr className="my-3 border-indigo-500/20" {...props} />

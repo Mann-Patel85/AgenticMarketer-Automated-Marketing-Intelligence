@@ -299,7 +299,7 @@ function LoginContent() {
                             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                             <div className="flex-1">
                                 <p className="font-semibold">Authentication Notice</p>
-                                <p className="text-[11px] text-rose-300/90 mt-0.5">{error}</p>
+                                <p className="text-xs text-rose-300/90 mt-0.5">{error}</p>
                             </div>
                         </motion.div>
                     )}
@@ -345,7 +345,7 @@ function LoginContent() {
                 {/* Divider */}
                 <div className="relative my-5 flex items-center justify-center">
                     <div className="border-t border-slate-800 w-full" />
-                    <span className="bg-slate-900/90 px-3 text-[11px] font-mono uppercase tracking-wider text-slate-500 absolute">
+                    <span className="bg-slate-900/90 px-3 text-xs font-mono uppercase tracking-wider text-slate-500 absolute">
                         Or continue with email
                     </span>
                 </div>
@@ -385,7 +385,7 @@ function LoginContent() {
                                     setForgotEmail(email);
                                     setShowForgotModal(true);
                                 }}
-                                className="text-[11px] text-indigo-400 hover:text-indigo-300 transition font-medium cursor-pointer"
+                                className="text-xs text-indigo-400 hover:text-indigo-300 transition font-medium cursor-pointer"
                             >
                                 Forgot password?
                             </button>
@@ -503,7 +503,7 @@ function LoginContent() {
                                             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                                             Instructions Sent
                                         </p>
-                                        <p className="text-[11px] mt-1 text-emerald-300/80">
+                                        <p className="text-xs mt-1 text-emerald-300/80">
                                             Password reset instructions sent to <strong>{forgotEmail}</strong>. Please check your inbox.
                                         </p>
                                     </div>
@@ -615,7 +615,7 @@ function LoginContent() {
                                     />
                                 </div>
                                 {resetError && (
-                                    <p className="text-[11px] text-rose-400 flex items-center gap-1.5">
+                                    <p className="text-xs text-rose-400 flex items-center gap-1.5">
                                         <AlertCircle className="w-3.5 h-3.5" />
                                         {resetError}
                                     </p>

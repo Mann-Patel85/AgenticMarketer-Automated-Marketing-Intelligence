@@ -168,7 +168,7 @@ export default function AdminPage() {
                                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                                 <span className="font-semibold">{health.active_agents || 6} Swarm Nodes Online</span>
                                 <span className="text-slate-600">•</span>
-                                <span className="font-mono text-[11px]">v{health.version || '2.0.0'}</span>
+                                <span className="font-mono text-xs">v{health.version || '2.0.0'}</span>
                             </div>
                         )}
                     </div>
@@ -192,7 +192,7 @@ export default function AdminPage() {
                                 <div className="space-y-1">
                                     <p className="font-semibold text-emerald-200">{inviteSuccess.message}</p>
                                     {inviteSuccess.tempPassword && (
-                                        <p className="font-mono text-[11px] text-emerald-400 bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-500/30 inline-block">
+                                        <p className="font-mono text-xs text-emerald-400 bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-500/30 inline-block">
                                             Temporary Access Key: <span className="font-bold text-white">{inviteSuccess.tempPassword}</span>
                                         </p>
                                     )}
@@ -215,8 +215,8 @@ export default function AdminPage() {
                                 <h3 className="text-xl font-extrabold text-white mt-1">
                                     {stats?.groq_tokens_used ? stats.groq_tokens_used.toLocaleString() : 'Not tracked'}
                                 </h3>
-                                <span className="text-[10px] text-emerald-400 font-medium">
-                                    {health?.groq_api_configured ? 'Active & Blazing Fast' : 'Groq LPU Ready'}
+                                <span className={`text-xs font-medium ${health?.groq_api_configured ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                    {health?.groq_api_configured ? 'API key configured' : 'API key missing'}
                                 </span>
                             </div>
                             <div className="p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
@@ -230,8 +230,8 @@ export default function AdminPage() {
                                 <h3 className="text-xl font-extrabold text-white mt-1">
                                     {stats?.chroma_chunks_indexed !== undefined ? `${stats.chroma_chunks_indexed} Chunks` : 'Active'}
                                 </h3>
-                                <span className="text-[10px] text-cyan-400 font-medium">
-                                    {health?.indexed_documents_count !== undefined ? `${health.indexed_documents_count} docs indexed` : 'Persistent FAISS'}
+                                <span className="text-xs text-cyan-400 font-medium">
+                                    {health?.indexed_documents_count !== undefined ? `${health.indexed_documents_count} docs indexed` : 'Loading…'}
                                 </span>
                             </div>
                             <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
@@ -245,7 +245,7 @@ export default function AdminPage() {
                                 <h3 className="text-xl font-extrabold text-white mt-1">
                                     {collaborators.length} / 10
                                 </h3>
-                                <span className="text-[10px] text-indigo-400 font-medium">
+                                <span className="text-xs text-indigo-400 font-medium">
                                     {Math.max(0, 10 - collaborators.length)} seats available
                                 </span>
                             </div>
@@ -260,7 +260,7 @@ export default function AdminPage() {
                                 <h3 className="text-xl font-extrabold text-white mt-1">
                                     {health?.active_agents || 6} Swarm Nodes
                                 </h3>
-                                <span className="text-[10px] text-emerald-400 font-medium">All Pipelines Operational</span>
+                                <span className="text-xs text-emerald-400 font-medium">All Pipelines Operational</span>
                             </div>
                             <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
                                 <Activity className="w-5 h-5" />
@@ -276,7 +276,7 @@ export default function AdminPage() {
                                     <Zap className="w-4 h-4 text-amber-400" />
                                     <h2 className="text-sm font-bold text-white">Groq LPU High-Speed Orchestrator</h2>
                                 </div>
-                                <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">
+                                <span className="text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-semibold">
                                     {selectedGroqModel || health?.groq_model || 'openai/gpt-oss-120b'}
                                 </span>
                             </div>
@@ -286,7 +286,7 @@ export default function AdminPage() {
                             </p>
 
                             <div className="space-y-2">
-                                <label className="text-[11px] font-medium text-slate-300">Active Groq LPU Models</label>
+                                <label className="text-xs font-medium text-slate-300">Active Groq LPU Models</label>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                     {[
                                         { id: 'openai/gpt-oss-120b', label: 'GPT OSS 120B (Flagship)' },
@@ -304,68 +304,68 @@ export default function AdminPage() {
                                             }`}
                                         >
                                             <div className="flex items-center justify-between">
-                                                <span className="text-[11px] font-sans font-semibold text-slate-200">{m.label}</span>
+                                                <span className="text-xs font-sans font-semibold text-slate-200">{m.label}</span>
                                                 {(selectedGroqModel === m.id || (!selectedGroqModel && m.id === 'openai/gpt-oss-120b')) && (
                                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                                                 )}
                                             </div>
-                                            <span className="text-[9px] text-slate-500">{m.id}</span>
+                                            <span className="text-[11px] text-slate-500">{m.id}</span>
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
                             <div className="space-y-2 pt-1">
-                                <label className="text-[11px] font-medium text-slate-300">Environment API Key Status</label>
+                                <label className="text-xs font-medium text-slate-300">Environment API Key Status</label>
                                 <div className="flex items-center gap-2">
                                     <div className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-300 flex items-center justify-between">
                                         <span>{health?.groq_api_configured ? '•••••••••••••••••••••••• (Active in .env)' : 'No key detected in .env'}</span>
-                                        <span className="text-emerald-400 text-[10px] font-semibold">
+                                        <span className="text-emerald-400 text-xs font-semibold">
                                             {health?.groq_api_configured ? 'VALIDATED' : 'ACTION REQUIRED'}
                                         </span>
                                     </div>
                                 </div>
-                                <p className="text-[10px] text-slate-500">
+                                <p className="text-xs text-slate-500">
                                     Primary Key: <code className="text-amber-400">GROQ_API_KEY</code> in project root <code className="text-amber-400">.env</code>.
                                 </p>
                             </div>
 
                             <div className="pt-2 border-t border-slate-800/80 space-y-2">
                                 <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between text-[11px]">
+                                    <div className="flex items-center justify-between text-xs">
                                         <span className="font-semibold text-white flex items-center gap-1.5">
                                             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                                             Cloudflare Workers AI FLUX.1 (Primary)
                                         </span>
-                                        <span className="text-[10px] font-mono text-slate-400">
+                                        <span className="text-xs font-mono text-slate-400">
                                             {health?.cloudflare_model ? health.cloudflare_model.replace('@cf/', '') : 'black-forest-labs/flux-1-schnell'}
                                         </span>
                                     </div>
-                                    <div className="p-2.5 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between text-[11px] font-mono">
+                                    <div className="p-2.5 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between text-xs font-mono">
                                         <span className="text-slate-400">
                                             {health?.cloudflare_configured ? '•••••••••••••••••••••••• (Cloudflare Edge Verified)' : 'CLOUDFLARE_API_TOKEN in .env'}
                                         </span>
-                                        <span className={health?.cloudflare_configured ? 'text-emerald-400 font-semibold text-[10px]' : 'text-amber-400 font-semibold text-[10px]'}>
+                                        <span className={health?.cloudflare_configured ? 'text-emerald-400 font-semibold text-xs' : 'text-amber-400 font-semibold text-xs'}>
                                             {health?.cloudflare_configured ? 'ACTIVE (PRIMARY)' : 'STANDBY'}
                                         </span>
                                     </div>
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between text-[11px]">
+                                    <div className="flex items-center justify-between text-xs">
                                         <span className="font-semibold text-white flex items-center gap-1.5">
                                             <Cpu className="w-3.5 h-3.5 text-cyan-400" />
                                             Eden AI Universal (Fallback 1)
                                         </span>
-                                        <span className="text-[10px] font-mono text-slate-400">
+                                        <span className="text-xs font-mono text-slate-400">
                                             stabilityai / replicate
                                         </span>
                                     </div>
-                                    <div className="p-2.5 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between text-[11px] font-mono">
+                                    <div className="p-2.5 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between text-xs font-mono">
                                         <span className="text-slate-400">
                                             {health?.eden_ai_configured ? '•••••••••••••••••••••••• (EDEN_AI_API_KEY configured)' : 'Optional API Key in .env'}
                                         </span>
-                                        <span className={health?.eden_ai_configured ? 'text-cyan-400 font-semibold text-[10px]' : 'text-slate-500 font-semibold text-[10px]'}>
+                                        <span className={health?.eden_ai_configured ? 'text-cyan-400 font-semibold text-xs' : 'text-slate-500 font-semibold text-xs'}>
                                             {health?.eden_ai_configured ? 'ACTIVE (FALLBACK)' : 'STANDBY'}
                                         </span>
                                     </div>
@@ -379,8 +379,8 @@ export default function AdminPage() {
                                     <Share2 className="w-4 h-4 text-pink-400" />
                                     <h2 className="text-sm font-bold text-white">Omnichannel Gateway Status</h2>
                                 </div>
-                                <span className="text-[10px] font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2.5 py-0.5 rounded-full font-semibold">
-                                    9 Channels Active
+                                <span className="text-xs font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2.5 py-0.5 rounded-full font-semibold">
+                                    Keys via .env
                                 </span>
                             </div>
 
@@ -390,17 +390,17 @@ export default function AdminPage() {
                                         <Globe className="w-4 h-4 text-sky-400" />
                                         <span>Social Publishers (LinkedIn, X, Meta, Reddit, Threads, YouTube, TikTok)</span>
                                     </span>
-                                    <span className="text-emerald-400 text-[10px] font-semibold">Ready</span>
+                                    <span className="text-slate-400 text-xs font-semibold whitespace-nowrap shrink-0 pl-3">Needs API keys</span>
                                 </div>
                                 <div className="flex items-center justify-between p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-300">
                                     <span className="flex items-center gap-2">
                                         <Shield className="w-4 h-4 text-indigo-400" />
                                         <span>Universal Webhook Dispatch (Zapier, Make, Buffer)</span>
                                     </span>
-                                    <span className="text-emerald-400 text-[10px] font-semibold">Active</span>
+                                    <span className="text-slate-400 text-xs font-semibold">Available</span>
                                 </div>
-                                <p className="text-[10px] text-slate-500">
-                                    Omnichannel broadcasts are recorded in <code className="text-slate-400">backend/data/publish_history.json</code> with instant audit trails.
+                                <p className="text-xs text-slate-500">
+                                    Every broadcast is saved to the database as an audit trail. Channels without credentials run in sandbox mode.
                                 </p>
                             </div>
                         </div>
@@ -443,25 +443,25 @@ export default function AdminPage() {
                                                 <div className="flex items-center gap-2">
                                                     <p className="font-semibold text-slate-200">{u.name}</p>
                                                     {u.email?.toLowerCase() === user?.email?.toLowerCase() && (
-                                                        <span className="text-[9px] font-mono bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded">
+                                                        <span className="text-[11px] font-mono bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded">
                                                             You (Super Admin)
                                                         </span>
                                                     )}
                                                 </div>
-                                                <p className="text-[11px] text-slate-500">{u.email}</p>
+                                                <p className="text-xs text-slate-500">{u.email}</p>
                                             </div>
                                         </div>
 
                                         <div className="flex items-center space-x-3">
-                                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-mono capitalize bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                            <span className="px-2.5 py-1 rounded-lg text-xs font-mono capitalize bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                                                 {u.role.replace('_', ' ')}
                                             </span>
-                                            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md text-[10px]">
+                                            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md text-xs">
                                                 {u.status || 'Active'}
                                             </span>
 
                                             {isTargetAdmin ? (
-                                                <span className="text-[10px] text-amber-400 font-mono font-medium px-2 py-0.5 bg-amber-400/10 border border-amber-400/20 rounded-md">
+                                                <span className="text-xs text-amber-400 font-mono font-medium px-2 py-0.5 bg-amber-400/10 border border-amber-400/20 rounded-md">
                                                     Super Admin Clearance
                                                 </span>
                                             ) : (
@@ -503,13 +503,13 @@ export default function AdminPage() {
                                 </button>
                             </div>
 
-                            <p className="text-[11px] text-slate-400">
+                            <p className="text-xs text-slate-400">
                                 Enter the operator details below. The operator will automatically receive an invitation email containing their access clearance and temporary credentials dispatched from your administrator email (<span className="text-indigo-300 font-mono">{user?.email || 'Administrator'}</span>).
                             </p>
 
                             <form onSubmit={handleAddCollaborator} className="space-y-3 text-xs">
                                 <div>
-                                    <label className="block text-[11px] font-medium text-slate-300 mb-1">Full Name</label>
+                                    <label className="block text-xs font-medium text-slate-300 mb-1">Full Name</label>
                                     <input
                                         type="text"
                                         required
@@ -521,7 +521,7 @@ export default function AdminPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[11px] font-medium text-slate-300 mb-1">Work Email</label>
+                                    <label className="block text-xs font-medium text-slate-300 mb-1">Work Email</label>
                                     <input
                                         type="email"
                                         required
@@ -533,7 +533,7 @@ export default function AdminPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[11px] font-medium text-slate-300 mb-1">Role Permissions</label>
+                                    <label className="block text-xs font-medium text-slate-300 mb-1">Role Permissions</label>
                                     <select
                                         value={newCollab.role}
                                         disabled={isInviting}

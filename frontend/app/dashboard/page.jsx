@@ -615,7 +615,7 @@ export default function DashboardPage() {
             color: 'from-blue-500 to-cyan-500',
             borderColor: 'border-cyan-500/30',
             textColor: 'text-cyan-400',
-            description: 'Extracts tokens via pdfplumber/docx, creates dense vector embeddings for RAG.',
+            description: 'Extracts text from PDFs, Word docs and images, and indexes it for brand-grounded retrieval.',
         },
         {
             id: 'research',
@@ -1222,16 +1222,16 @@ export default function DashboardPage() {
             <div className="min-h-screen text-slate-100 pb-20 pt-4">
                 {/* Top Cyber Command Header */}
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-6">
-                    <div className="cyber-card rounded-3xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div>
+                    <div className="cyber-card rounded-3xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        <div className="min-w-0 lg:flex-1">
                             <div className="flex items-center gap-2.5">
                                 <span className="p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-400">
                                     <Bot className="w-5 h-5" />
                                 </span>
-                                <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+                                <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight whitespace-nowrap">
                                     Swarm Command Center
                                 </h1>
-                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                                <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1 whitespace-nowrap shrink-0">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                     6 Nodes Active
                                 </span>
@@ -1241,17 +1241,17 @@ export default function DashboardPage() {
                             </p>
                         </div>
 
-                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5">
+                        <div className="flex flex-wrap items-center gap-2.5 lg:justify-end *:whitespace-nowrap *:shrink-0">
                             {saveStatus === 'saving' && (
-                                <span className="px-2.5 py-1 rounded-full text-[11px] font-mono bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center gap-1.5 shadow-sm">
+                                <span className="px-2.5 py-1 rounded-full text-xs font-mono bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center gap-1.5 shadow-sm">
                                     <RotateCcw className="w-3 h-3 animate-spin" />
                                     <span>Syncing...</span>
                                 </span>
                             )}
                             {saveStatus === 'saved' && (
-                                <span className="px-2.5 py-1 rounded-full text-[11px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5 shadow-sm">
+                                <span className="px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5 shadow-sm">
                                     <Cloud className="w-3 h-3 text-emerald-400" />
-                                    <span>Workspace Saved {lastSavedTime ? `(${lastSavedTime})` : ''}</span>
+                                    <span>Saved{lastSavedTime ? ` ${lastSavedTime}` : ''}</span>
                                 </span>
                             )}
 
@@ -1312,12 +1312,12 @@ export default function DashboardPage() {
                                     6-Agent Swarm Topology Pipeline
                                 </h2>
                             </div>
-                            <span className="text-[11px] font-mono text-slate-500">
+                            <span className="text-xs font-mono text-slate-500">
                                 {isExecuting ? 'Sequential execution stream active' : 'All agents ready'}
                             </span>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                        <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0 sm:overflow-visible sm:grid sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
                             {agents.map((agent, index) => {
                                 const IconComponent = agent.icon;
                                 const isActive = isExecuting && activeAgentIndex === index;
@@ -1327,7 +1327,7 @@ export default function DashboardPage() {
                                     <motion.div
                                         key={agent.id}
                                         layout
-                                        className={`relative p-3.5 rounded-2xl border transition-all duration-300 ${
+                                        className={`relative shrink-0 w-[78%] snap-start sm:w-auto p-3.5 rounded-2xl border transition-all duration-300 ${
                                             isActive
                                                 ? `bg-slate-900/90 ${agent.borderColor} shadow-xl shadow-amber-500/20 ring-1 ring-amber-500/40 glow-indigo`
                                                 : isCompleted
@@ -1342,17 +1342,17 @@ export default function DashboardPage() {
 
                                             <div>
                                                 {isActive ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold animate-pulse bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center gap-1.5 shadow-sm">
+                                                    <span className="whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-semibold animate-pulse bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center gap-1.5 shadow-sm">
                                                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
                                                         Thinking...
                                                     </span>
                                                 ) : isCompleted ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                                    <span className="whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
                                                         <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                                                        <span>✓ Complete</span>
+                                                        <span>Complete</span>
                                                     </span>
                                                 ) : (
-                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium text-slate-400 bg-slate-800/80 border border-slate-700/60 flex items-center gap-1">
+                                                    <span className="px-2 py-0.5 rounded-full text-xs font-medium text-slate-400 bg-slate-800/80 border border-slate-700/60 flex items-center gap-1">
                                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/80" />
                                                         Ready
                                                     </span>
@@ -1361,16 +1361,16 @@ export default function DashboardPage() {
                                         </div>
 
                                         <h3 className="text-xs font-bold text-white leading-tight truncate">{agent.name}</h3>
-                                        <p className={`text-[10px] font-medium mt-0.5 truncate ${agent.textColor}`}>{agent.role}</p>
+                                        <p className={`text-xs font-medium mt-0.5 truncate ${agent.textColor}`}>{agent.role}</p>
                                         <p
                                             title={agent.description}
-                                            className="truncate text-[11px] text-slate-400 mt-2 block"
+                                            className="truncate text-xs text-slate-400 mt-2 block"
                                         >
                                             {agent.description}
                                         </p>
 
                                         {isActive && (
-                                            <div className="mt-2.5 pt-2 border-t border-slate-800 flex items-center gap-1.5 text-[10px] text-amber-300 font-mono animate-pulse">
+                                            <div className="mt-2.5 pt-2 border-t border-slate-800 flex items-center gap-1.5 text-xs text-amber-300 font-mono animate-pulse">
                                                 <Sparkles className="w-3 h-3 animate-spin text-amber-400" />
                                                 <span>Processing...</span>
                                             </div>
@@ -1391,21 +1391,18 @@ export default function DashboardPage() {
                                         <Zap className="w-4 h-4 text-amber-400" />
                                         <h2 className="text-sm font-bold text-white">Campaign Directive Console</h2>
                                     </div>
-                                    <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/60 border border-cyan-800/50 px-2.5 py-0.5 rounded-full">
-                                        PIPELINE INPUT
-                                    </span>
                                 </div>
 
                                  {/* Campaign Content Format Selector */}
                                 <div>
-                                    <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 font-mono">
+                                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 font-mono">
                                         Campaign Content Format
                                     </label>
                                     <div className="grid grid-cols-3 gap-2">
                                         <button
                                             type="button"
                                             onClick={() => setContentType('social_bundle')}
-                                            className={`px-2 py-2 rounded-xl text-[11px] font-semibold border transition text-center cursor-pointer ${
+                                            className={`px-2 py-2 rounded-xl text-xs font-semibold border transition text-center cursor-pointer ${
                                                 contentType === 'social_bundle'
                                                     ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm'
                                                     : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
@@ -1416,7 +1413,7 @@ export default function DashboardPage() {
                                         <button
                                             type="button"
                                             onClick={() => setContentType('seo_article')}
-                                            className={`px-2 py-2 rounded-xl text-[11px] font-semibold border transition text-center cursor-pointer ${
+                                            className={`px-2 py-2 rounded-xl text-xs font-semibold border transition text-center cursor-pointer ${
                                                 contentType === 'seo_article'
                                                     ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 shadow-sm'
                                                     : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
@@ -1427,7 +1424,7 @@ export default function DashboardPage() {
                                         <button
                                             type="button"
                                             onClick={() => setContentType('landing_page')}
-                                            className={`px-2 py-2 rounded-xl text-[11px] font-semibold border transition text-center cursor-pointer ${
+                                            className={`px-2 py-2 rounded-xl text-xs font-semibold border transition text-center cursor-pointer ${
                                                 contentType === 'landing_page'
                                                     ? 'bg-sky-600/20 border-sky-500 text-sky-300 shadow-sm'
                                                     : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
@@ -1440,28 +1437,28 @@ export default function DashboardPage() {
 
                                 {/* Preset Starters */}
                                 <div>
-                                    <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 font-mono">
+                                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 font-mono">
                                         Preset Directive Templates
                                     </label>
                                     <div className="flex flex-wrap gap-1.5">
                                         <button
                                             type="button"
                                             onClick={() => handlePresetGoal('Launch an enterprise B2B SaaS campaign targeting Chief Technology Officers for automated cloud cost intelligence across LinkedIn and X.')}
-                                            className="text-[11px] px-3 py-1 rounded-xl bg-slate-900 hover:bg-indigo-950/60 text-slate-300 hover:text-indigo-300 border border-slate-800 hover:border-indigo-500/40 transition active:scale-95 cursor-pointer"
+                                            className="text-xs px-3 py-1 rounded-xl bg-slate-900 hover:bg-indigo-950/60 text-slate-300 hover:text-indigo-300 border border-slate-800 hover:border-indigo-500/40 transition active:scale-95 cursor-pointer"
                                         >
                                             🚀 SaaS Launch
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => handlePresetGoal('Create high-converting cold outreach copy and omnichannel hooks for AI marketing automation across Reddit, Threads, and Meta.')}
-                                            className="text-[11px] px-3 py-1 rounded-xl bg-slate-900 hover:bg-indigo-950/60 text-slate-300 hover:text-indigo-300 border border-slate-800 hover:border-indigo-500/40 transition active:scale-95 cursor-pointer"
+                                            className="text-xs px-3 py-1 rounded-xl bg-slate-900 hover:bg-indigo-950/60 text-slate-300 hover:text-indigo-300 border border-slate-800 hover:border-indigo-500/40 transition active:scale-95 cursor-pointer"
                                         >
                                             💼 B2B Outbound
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => handlePresetGoal('Generate an SEO and video script cluster targeting autonomous agentic workflows for YouTube, TikTok, and blogs.')}
-                                            className="text-[11px] px-3 py-1 rounded-xl bg-slate-900 hover:bg-indigo-950/60 text-slate-300 hover:text-indigo-300 border border-slate-800 hover:border-indigo-500/40 transition active:scale-95 cursor-pointer"
+                                            className="text-xs px-3 py-1 rounded-xl bg-slate-900 hover:bg-indigo-950/60 text-slate-300 hover:text-indigo-300 border border-slate-800 hover:border-indigo-500/40 transition active:scale-95 cursor-pointer"
                                         >
                                             🔍 SEO Authority
                                         </button>
@@ -1475,7 +1472,7 @@ export default function DashboardPage() {
                                             <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
                                             <span>Brand Playbook Grounding</span>
                                         </label>
-                                        <span className="text-[10px] text-slate-500 font-mono">
+                                        <span className="text-xs text-slate-500 font-mono">
                                             {selectedBrandPlaybook === 'auto' ? 'Auto-Detect Relevance' : selectedBrandPlaybook === 'none' ? 'Clean Slate' : 'Locked to Guide'}
                                         </span>
                                     </div>
@@ -1506,7 +1503,7 @@ export default function DashboardPage() {
                                             <span>Campaign Goal & Directives</span>
                                             {!attachedBrief && <span className="text-rose-400">*</span>}
                                         </label>
-                                        <span className="text-[10px] text-slate-500 font-mono">
+                                        <span className="text-xs text-slate-500 font-mono">
                                             {campaignGoal.length}/500 chars
                                         </span>
                                     </div>
@@ -1546,9 +1543,9 @@ export default function DashboardPage() {
                                             >
                                                 <div className="flex items-center space-x-2 text-slate-400 group-hover:text-slate-200 text-xs">
                                                     <Paperclip className="w-3.5 h-3.5 text-indigo-400 group-hover:rotate-45 transition-transform" />
-                                                    <span className="text-[11px] font-medium">Attach Multimodal Brief (Product Photo, Diagram, PDF, TXT)</span>
+                                                    <span className="text-xs font-medium">Attach Multimodal Brief (Product Photo, Diagram, PDF, TXT)</span>
                                                 </div>
-                                                <span className="text-[10px] px-2 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 group-hover:bg-indigo-500/20 font-medium">
+                                                <span className="text-xs px-2 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 group-hover:bg-indigo-500/20 font-medium">
                                                     Upload Brief
                                                 </span>
                                             </div>
@@ -1558,8 +1555,8 @@ export default function DashboardPage() {
                                             <div className="flex items-center space-x-2.5 px-3 py-2.5 bg-indigo-950/30 border border-indigo-500/40 rounded-xl text-indigo-200 text-xs">
                                                 <Loader2 className="w-4 h-4 animate-spin text-indigo-400 shrink-0" />
                                                 <div className="min-w-0">
-                                                    <p className="font-semibold text-[11px]">Analyzing Brief with Multimodal Vision AI...</p>
-                                                    <p className="text-[10px] text-indigo-400/80">Extracting color palettes, product diagrams & visual specs</p>
+                                                    <p className="font-semibold text-xs">Analyzing Brief with Multimodal Vision AI...</p>
+                                                    <p className="text-xs text-indigo-400/80">Extracting color palettes, product diagrams & visual specs</p>
                                                 </div>
                                             </div>
                                         )}
@@ -1579,12 +1576,12 @@ export default function DashboardPage() {
                                                             <span className="font-semibold text-xs text-slate-200 truncate max-w-[200px]">
                                                                 {attachedBrief.filename}
                                                             </span>
-                                                            <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono font-medium">
+                                                            <span className="text-[11px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono font-medium">
                                                                 {attachedBrief.file_type} Brief Attached
                                                             </span>
                                                         </div>
                                                         {attachedBrief.summary && (
-                                                            <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">
+                                                            <p className="text-xs text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">
                                                                 {attachedBrief.summary}
                                                             </p>
                                                         )}
@@ -1602,7 +1599,7 @@ export default function DashboardPage() {
                                         )}
 
                                         {briefError && (
-                                            <p className="text-[10px] text-rose-400 mt-1 pl-1">{briefError}</p>
+                                            <p className="text-xs text-rose-400 mt-1 pl-1">{briefError}</p>
                                         )}
                                     </div>
                                 </div>
@@ -1610,7 +1607,7 @@ export default function DashboardPage() {
                                 {/* Parameters Grid */}
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                                        <label className="block text-xs font-medium text-slate-400 mb-1">
                                             Audience Segment
                                         </label>
                                         <input
@@ -1642,7 +1639,7 @@ export default function DashboardPage() {
                                                                 setTargetAudience((prev) => (prev ? `${prev}, ${aud}` : aud));
                                                             }
                                                         }}
-                                                        className={`text-[10px] px-2 py-0.5 rounded-lg border transition cursor-pointer select-none ${
+                                                        className={`text-xs px-2 py-0.5 rounded-lg border transition cursor-pointer select-none ${
                                                             isSelected
                                                                 ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300 font-semibold'
                                                                 : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-300'
@@ -1655,7 +1652,7 @@ export default function DashboardPage() {
                                         </div>
                                     </div>
                                     <div>
-                                        <label htmlFor="brand-tone-input" className="block text-[11px] font-medium text-slate-400 mb-1">
+                                        <label htmlFor="brand-tone-input" className="block text-xs font-medium text-slate-400 mb-1">
                                             Brand Voice & Tone
                                         </label>
                                         
@@ -1683,7 +1680,7 @@ export default function DashboardPage() {
 
                                         {/* Preset Selection Dropdown */}
                                         <div className="flex items-center gap-1.5 mt-1.5">
-                                            <span className="text-[10px] font-mono text-slate-500 shrink-0">Presets:</span>
+                                            <span className="text-xs font-mono text-slate-500 shrink-0">Presets:</span>
                                             <select
                                                 value=""
                                                 onChange={(e) => {
@@ -1691,7 +1688,7 @@ export default function DashboardPage() {
                                                         setTone(e.target.value);
                                                     }
                                                 }}
-                                                className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-indigo-300 font-medium py-1 px-2 focus:outline-none cursor-pointer transition truncate"
+                                                className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-xs text-indigo-300 font-medium py-1 px-2 focus:outline-none cursor-pointer transition truncate"
                                             >
                                                 <option value="" disabled>Choose a preset tone...</option>
                                                 <option value="Authoritative & High-Energy">⚡ Authoritative & Bold</option>
@@ -1728,7 +1725,7 @@ export default function DashboardPage() {
                                                                 setTone((prev) => (prev ? `${prev}, ${t}` : t));
                                                             }
                                                         }}
-                                                        className={`text-[10px] px-2 py-0.5 rounded-lg border transition cursor-pointer select-none ${
+                                                        className={`text-xs px-2 py-0.5 rounded-lg border transition cursor-pointer select-none ${
                                                             isSelected
                                                                 ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300 font-semibold'
                                                                 : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-300'
@@ -1747,9 +1744,9 @@ export default function DashboardPage() {
                                     <div className="flex items-center justify-between mb-1.5">
                                         <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                                             <FileText className="w-3.5 h-3.5 text-indigo-400" />
-                                            Grounding Assets (ChromaDB RAG)
+                                            Grounding Assets (Knowledge Base)
                                         </label>
-                                        <span className="text-[10px] text-slate-500 font-mono">PDF, DOCX, TXT, MD</span>
+                                        <span className="text-xs text-slate-500 font-mono">PDF, DOCX, TXT, MD</span>
                                     </div>
 
                                     <div
@@ -1780,7 +1777,7 @@ export default function DashboardPage() {
                                             <p className="text-xs font-medium text-slate-200">
                                                 Click or drag grounding assets here
                                             </p>
-                                            <p className="text-[10px] text-slate-500 mt-0.5">
+                                            <p className="text-xs text-slate-500 mt-0.5">
                                                 Embedded into vector store for grounded generation
                                             </p>
                                         </div>
@@ -1790,11 +1787,11 @@ export default function DashboardPage() {
                                 {/* File Queue Display */}
                                 <div>
                                     <div className="flex items-center justify-between mb-2">
-                                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono">
+                                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">
                                             Indexed Queue ({fileQueue.length})
                                         </span>
                                         {fileQueue.length > 0 && (
-                                            <span className="text-[10px] text-emerald-400 font-medium">
+                                            <span className="text-xs text-emerald-400 font-medium">
                                                 All files indexed
                                             </span>
                                         )}
@@ -1829,17 +1826,17 @@ export default function DashboardPage() {
                                                             <FileText className="w-3.5 h-3.5 text-indigo-400" />
                                                         </div>
                                                         <div className="min-w-0">
-                                                            <p className="font-medium text-slate-200 truncate text-[11px]">
+                                                            <p className="font-medium text-slate-200 truncate text-xs">
                                                                 {file.name}
                                                             </p>
-                                                            <p className="text-[10px] text-slate-500 font-mono">
+                                                            <p className="text-xs text-slate-500 font-mono">
                                                                 {file.size} • {file.chunks} Chunks
                                                             </p>
                                                         </div>
                                                     </div>
 
                                                     <div className="flex items-center space-x-2 shrink-0">
-                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium border flex items-center gap-1 ${
+                                                        <span className={`px-2 py-0.5 rounded text-xs font-medium border flex items-center gap-1 ${
                                                             isChecked
                                                                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                                                                 : 'bg-slate-800 text-slate-400 border-slate-700'
@@ -1865,11 +1862,11 @@ export default function DashboardPage() {
                                 {/* Target Channels & Auto-Publish */}
                                 <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2.5">
                                     <div className="flex items-center justify-between">
-                                        <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                                        <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                                             <Share2 className="w-3.5 h-3.5 text-pink-400" />
                                             Target Channels
                                         </label>
-                                        <label className="flex items-center gap-1.5 text-[10px] font-medium text-slate-300 cursor-pointer select-none">
+                                        <label className="flex items-center gap-1.5 text-xs font-medium text-slate-300 cursor-pointer select-none">
                                             <input
                                                 type="checkbox"
                                                 checked={autoPublish}
@@ -1883,7 +1880,7 @@ export default function DashboardPage() {
                                         </label>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                    <div className="grid grid-cols-2 gap-2 text-xs">
                                         {[
                                             { id: 'linkedin', label: 'LinkedIn' },
                                             { id: 'twitter', label: 'X (Twitter)' },
@@ -1904,7 +1901,7 @@ export default function DashboardPage() {
                                     </div>
 
                                     {autoPublish && (
-                                        <p className="text-[10px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-2.5 py-1 font-mono">
+                                        <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-2.5 py-1 font-mono">
                                             ⚡ <strong>Auto-Publish Armed:</strong> Once the 6-agent swarm finishes, it will broadcast copy and creatives to your checked channels.
                                         </p>
                                     )}
@@ -1934,7 +1931,7 @@ export default function DashboardPage() {
                                             </>
                                         )}
                                     </button>
-                                    <p className="text-[10px] text-slate-500 text-center mt-2 font-mono">
+                                    <p className="text-xs text-slate-500 text-center mt-2 font-mono">
                                         Coordinates Ingestion, Market Research, Copywriter, Image Gen, SEO Audit, and Social Publisher.
                                     </p>
                                 </div>
@@ -1949,9 +1946,6 @@ export default function DashboardPage() {
                                             Technical Site Auditor Agent
                                         </h3>
                                     </div>
-                                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/50 px-2 py-0.5 rounded-full">
-                                        LIVE CRAWLER
-                                    </span>
                                 </div>
 
                                 <form onSubmit={handleRunSEOAudit} className="flex gap-2">
@@ -1982,7 +1976,7 @@ export default function DashboardPage() {
                                     <div className="space-y-3 pt-2">
                                         <div className="flex items-center justify-between bg-slate-900/90 p-3 rounded-2xl border border-slate-800">
                                             <div>
-                                                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">Site Health Score</div>
+                                                <div className="text-xs text-slate-400 uppercase tracking-wider font-mono">Site Health Score</div>
                                                 <div className="text-xl font-black text-emerald-400 flex items-center gap-2">
                                                     {auditResult.health_score}/100
                                                     <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">
@@ -1990,19 +1984,19 @@ export default function DashboardPage() {
                                                     </span>
                                                 </div>
                                             </div>
-                                            <div className="text-right font-mono text-[10px] text-slate-400">
+                                            <div className="text-right font-mono text-xs text-slate-400">
                                                 <div>Latency: <span className="text-sky-400">{auditResult.response_time_ms} ms</span></div>
                                                 <div>Status: <span className="text-emerald-400">HTTP {auditResult.status_code}</span></div>
                                             </div>
                                         </div>
 
                                         <div className="space-y-1.5">
-                                            <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+                                            <div className="text-xs font-mono text-slate-400 uppercase tracking-wider">
                                                 Auditor Recommendations ({auditResult.recommendations.length})
                                             </div>
                                             <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
                                                 {auditResult.recommendations.map((rec, i) => (
-                                                    <div key={i} className="text-[11px] p-2 bg-slate-950/80 border border-slate-800/60 rounded-xl text-slate-300 flex items-start gap-2">
+                                                    <div key={i} className="text-xs p-2 bg-slate-950/80 border border-slate-800/60 rounded-xl text-slate-300 flex items-start gap-2">
                                                         <span className="text-amber-400 font-bold">•</span>
                                                         <span>{rec}</span>
                                                     </div>
@@ -2015,7 +2009,7 @@ export default function DashboardPage() {
                         </div>
 
                         {/* Swarm Output & Visual Studio (7 cols) */}
-                        <div className="lg:col-span-7 col-span-12 space-y-4">
+                        <div className="lg:col-span-7 col-span-12 space-y-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
                             {/* Auto-Publish Notification Banner */}
                             {autoPublishResult && autoPublishResult.success && (
                                 <div className="p-4 bg-emerald-500/15 border border-emerald-500/30 rounded-2xl text-xs text-emerald-200 flex items-center justify-between gap-3 shadow-lg shadow-emerald-500/5">
@@ -2027,7 +2021,7 @@ export default function DashboardPage() {
                                             <p className="font-bold text-emerald-300">
                                                 🚀 Swarm Auto-Published Campaign!
                                             </p>
-                                            <p className="text-[11px] text-slate-300 mt-0.5">
+                                            <p className="text-xs text-slate-300 mt-0.5">
                                                 Broadcast dispatched to <span className="font-semibold text-white">{autoPublishResult.platforms.join(', ')}</span> • Dispatch ID: <code className="font-mono text-emerald-400 bg-slate-950/60 px-1.5 py-0.5 rounded">{autoPublishResult.dispatchId}</code>
                                             </p>
                                         </div>
@@ -2064,7 +2058,7 @@ export default function DashboardPage() {
                                         </span>
                                         <div>
                                             <p className="font-bold text-amber-300">Swarm Orchestration Notice</p>
-                                            <p className="text-[11px] text-slate-300 mt-0.5">{swarmError}</p>
+                                            <p className="text-xs text-slate-300 mt-0.5">{swarmError}</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -2244,7 +2238,7 @@ export default function DashboardPage() {
                                                         </div>
 
                                                         {copyViewMode === 'studio' && (
-                                                            <div className="flex items-center gap-1 overflow-x-auto py-0.5 text-[11px]">
+                                                            <div className="flex items-center gap-1 overflow-x-auto py-0.5 text-xs">
                                                                 {[
                                                                     { id: 'all', label: 'All Channels' },
                                                                     { id: 'universal', label: '🌟 Universal (Post Anywhere)' },
@@ -2290,7 +2284,7 @@ export default function DashboardPage() {
                                                     {/* VIEW 1: RAW MARKDOWN VIEW */}
                                                     {copyViewMode === 'markdown' ? (
                                                         <div className="space-y-3">
-                                                            <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                                                            <div className="flex items-center justify-between text-xs text-slate-400 font-mono">
                                                                 <span>RAW COMPONENT MARKDOWN CODE</span>
                                                                 <button
                                                                     type="button"
@@ -2322,11 +2316,11 @@ export default function DashboardPage() {
                                                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                                                                     <div className="space-y-1">
                                                                         <div className="flex items-center gap-2">
-                                                                            <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                                                                            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
                                                                                 <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
                                                                                 Autonomous Swarm Verified
                                                                             </span>
-                                                                            <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                                                            <span className="text-xs text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                                                                                 12 Formats Ready
                                                                             </span>
                                                                         </div>
@@ -2374,15 +2368,15 @@ export default function DashboardPage() {
                                                                             />
                                                                             <div className="space-y-0.5">
                                                                                 <div className="flex items-center gap-2">
-                                                                                    <span className="text-[11px] font-bold text-white flex items-center gap-1">
+                                                                                    <span className="text-xs font-bold text-white flex items-center gap-1">
                                                                                         <ImageIcon className="w-3.5 h-3.5 text-pink-400" />
                                                                                         Multimodal Visual Creative
                                                                                     </span>
-                                                                                    <span className="text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded bg-pink-500/10 text-pink-300 border border-pink-500/20">
+                                                                                    <span className="text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded bg-pink-500/10 text-pink-300 border border-pink-500/20">
                                                                                         FLUX.1-schnell
                                                                                     </span>
                                                                                 </div>
-                                                                                <p className="text-[10px] text-slate-400 line-clamp-1 max-w-md">
+                                                                                <p className="text-xs text-slate-400 line-clamp-1 max-w-md">
                                                                                     Photorealistic creative paired with your copy
                                                                                 </p>
                                                                             </div>
@@ -2421,15 +2415,15 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     🌟 Universal Master Copy
-                                                                                    <span className="text-[10px] text-indigo-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-indigo-400 font-mono font-normal">
                                                                                         Post / Publish Anywhere
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">Versatile high-impact post format optimized for any platform, site, forum, or ad channel</p>
+                                                                                <p className="text-xs text-slate-400">Versatile high-impact post format optimized for any platform, site, forum, or ad channel</p>
                                                                             </div>
                                                                         </div>
                                                                         <div className="flex items-center gap-2">
-                                                                            <span className="text-[10px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                                                                            <span className="text-xs font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
                                                                                 {parsedBundle.universal.length} chars
                                                                             </span>
                                                                             <button
@@ -2475,11 +2469,11 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     Hook & Headline Variants
-                                                                                    <span className="text-[10px] text-purple-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-purple-400 font-mono font-normal">
                                                                                         ({parsedBundle.headlines.length} angles)
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">Conversion-engineered direct, challenge, and authority hooks</p>
+                                                                                <p className="text-xs text-slate-400">Conversion-engineered direct, challenge, and authority hooks</p>
                                                                             </div>
                                                                         </div>
                                                                         <button
@@ -2488,7 +2482,7 @@ export default function DashboardPage() {
                                                                                 const hooksText = parsedBundle.headlines.map(h => `${h.label}:\n${h.text}`).join('\n\n');
                                                                                 copyToClipboard(hooksText, 'all_hooks', 'Copied all hook variants to clipboard!');
                                                                             }}
-                                                                            className={`text-[11px] font-medium flex items-center gap-1 cursor-pointer transition ${
+                                                                            className={`text-xs font-medium flex items-center gap-1 cursor-pointer transition ${
                                                                                 copiedSection === 'all_hooks'
                                                                                     ? 'text-emerald-400 font-semibold'
                                                                                     : 'text-indigo-400 hover:text-indigo-300'
@@ -2515,7 +2509,7 @@ export default function DashboardPage() {
                                                                                 className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700 transition flex flex-col md:flex-row md:items-center justify-between gap-2.5 group"
                                                                             >
                                                                                 <div className="space-y-1 flex-1">
-                                                                                    <span className="inline-block text-[10px] font-semibold text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-md border border-purple-500/20">
+                                                                                    <span className="inline-block text-xs font-semibold text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-md border border-purple-500/20">
                                                                                         {hook.label}
                                                                                     </span>
                                                                                     <p className="text-xs text-slate-200 leading-relaxed font-sans font-medium">
@@ -2525,7 +2519,7 @@ export default function DashboardPage() {
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => copyToClipboard(hook.text, `hook_${idx}`, `Copied hook (${hook.label}) to clipboard!`)}
-                                                                                    className={`self-end md:self-auto px-2.5 py-1 rounded-lg text-[11px] font-medium transition flex items-center gap-1 cursor-pointer opacity-90 group-hover:opacity-100 ${
+                                                                                    className={`self-end md:self-auto px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1 cursor-pointer opacity-90 group-hover:opacity-100 ${
                                                                                         copiedSection === `hook_${idx}`
                                                                                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                                                                                             : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
@@ -2561,15 +2555,15 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     LinkedIn Thought Leadership Post
-                                                                                    <span className="text-[10px] text-sky-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-sky-400 font-mono font-normal">
                                                                                         B2B Authority
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">Clean paragraphs, value framework, and ready-to-paste hashtags</p>
+                                                                                <p className="text-xs text-slate-400">Clean paragraphs, value framework, and ready-to-paste hashtags</p>
                                                                             </div>
                                                                         </div>
                                                                         <div className="flex items-center gap-2">
-                                                                            <span className="text-[10px] font-mono text-slate-500">
+                                                                            <span className="text-xs font-mono text-slate-500">
                                                                                 {parsedBundle.linkedin.length} chars
                                                                             </span>
                                                                             <button
@@ -2604,7 +2598,7 @@ export default function DashboardPage() {
                                                                             </div>
                                                                             <div>
                                                                                 <div className="text-xs font-bold text-slate-200">Growth Marketing Executive</div>
-                                                                                <div className="text-[10px] text-slate-500">Published via Autonomous Marketing Intelligence Swarm · 1st</div>
+                                                                                <div className="text-xs text-slate-500">Published via Autonomous Marketing Intelligence Swarm · 1st</div>
                                                                             </div>
                                                                         </div>
 
@@ -2626,11 +2620,11 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     X / Twitter Auto-Thread
-                                                                                    <span className="text-[10px] text-slate-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-slate-400 font-mono font-normal">
                                                                                         ({parsedBundle.twitter.length} parts)
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">Viral hook, value props, and call to action</p>
+                                                                                <p className="text-xs text-slate-400">Viral hook, value props, and call to action</p>
                                                                             </div>
                                                                         </div>
                                                                         <button
@@ -2666,11 +2660,11 @@ export default function DashboardPage() {
                                                                                 className="relative ml-2 pl-6 p-3 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition space-y-2 group"
                                                                             >
                                                                                 <div className="flex items-center justify-between">
-                                                                                    <span className="text-[10px] font-mono font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                                                                                    <span className="text-xs font-mono font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
                                                                                         {t.part}
                                                                                     </span>
                                                                                     <div className="flex items-center gap-2">
-                                                                                        <span className={`text-[10px] font-mono ${t.text.length <= 280 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                                                                        <span className={`text-xs font-mono ${t.text.length <= 280 ? 'text-emerald-400' : 'text-amber-400'}`}>
                                                                                             {t.text.length}/280 chars
                                                                                         </span>
                                                                                         <button
@@ -2707,11 +2701,11 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     Reddit Discussion Post
-                                                                                    <span className="text-[10px] text-orange-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-orange-400 font-mono font-normal">
                                                                                         r/{parsedBundle.reddit.subreddit || 'marketing'}
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">Authentic community-first value post without overt sales pitch</p>
+                                                                                <p className="text-xs text-slate-400">Authentic community-first value post without overt sales pitch</p>
                                                                             </div>
                                                                         </div>
                                                                         <button
@@ -2762,11 +2756,11 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     Medium / Dev.to / Blog Article
-                                                                                    <span className="text-[10px] text-emerald-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-emerald-400 font-mono font-normal">
                                                                                         Long-Form Editorial
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">In-depth structured article with subheadings and key takeaways</p>
+                                                                                <p className="text-xs text-slate-400">In-depth structured article with subheadings and key takeaways</p>
                                                                             </div>
                                                                         </div>
                                                                         <button
@@ -2817,11 +2811,11 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     Meta Threads Microblog Post
-                                                                                    <span className="text-[10px] text-pink-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-pink-400 font-mono font-normal">
                                                                                         Conversational & Viral
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">High-engagement micro-thread format for Meta Threads & Instagram</p>
+                                                                                <p className="text-xs text-slate-400">High-engagement micro-thread format for Meta Threads & Instagram</p>
                                                                             </div>
                                                                         </div>
                                                                         <button
@@ -2857,12 +2851,12 @@ export default function DashboardPage() {
                                                                                 <div>
                                                                                     <div className="flex items-center gap-1.5">
                                                                                         <span className="text-xs font-bold text-white">growth.intelligence</span>
-                                                                                        <span className="text-[10px] text-sky-400">✓</span>
+                                                                                        <span className="text-xs text-sky-400">✓</span>
                                                                                     </div>
-                                                                                    <span className="text-[10px] text-slate-500">Threads · Just now</span>
+                                                                                    <span className="text-xs text-slate-500">Threads · Just now</span>
                                                                                 </div>
                                                                             </div>
-                                                                            <span className="text-[10px] font-mono text-slate-500">
+                                                                            <span className="text-xs font-mono text-slate-500">
                                                                                 {parsedBundle.threads.length}/500
                                                                             </span>
                                                                         </div>
@@ -2881,7 +2875,7 @@ export default function DashboardPage() {
                                                                             </div>
                                                                         )}
 
-                                                                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-slate-400 text-[11px]">
+                                                                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-slate-400 text-xs">
                                                                             <div className="flex items-center gap-4">
                                                                                 <span className="hover:text-pink-400 transition cursor-pointer flex items-center gap-1">
                                                                                     ❤️ <span>248</span>
@@ -2893,7 +2887,7 @@ export default function DashboardPage() {
                                                                                     🔄 <span>19</span>
                                                                                 </span>
                                                                             </div>
-                                                                            <span className="text-[10px] text-slate-500 font-mono">Meta Threads Feed Ready</span>
+                                                                            <span className="text-xs text-slate-500 font-mono">Meta Threads Feed Ready</span>
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -2910,11 +2904,11 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     Video Script (Reels / TikTok / Shorts)
-                                                                                    <span className="text-[10px] text-rose-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-rose-400 font-mono font-normal">
                                                                                         30-60s Format
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">Visual scene directions + spoken audio voiceover script</p>
+                                                                                <p className="text-xs text-slate-400">Visual scene directions + spoken audio voiceover script</p>
                                                                             </div>
                                                                         </div>
                                                                         <button
@@ -2959,11 +2953,11 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     Discord & Slack Announcement
-                                                                                    <span className="text-[10px] text-cyan-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-cyan-400 font-mono font-normal">
                                                                                         Community Channel
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">Formatted with emoji highlights and quick action link</p>
+                                                                                <p className="text-xs text-slate-400">Formatted with emoji highlights and quick action link</p>
                                                                             </div>
                                                                         </div>
                                                                         <button
@@ -3008,11 +3002,11 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     B2B Outbound Cold Email Sequence
-                                                                                    <span className="text-[10px] text-emerald-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-emerald-400 font-mono font-normal">
                                                                                         High-Open Rate
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">High-converting subject line and concise value pitch</p>
+                                                                                <p className="text-xs text-slate-400">High-converting subject line and concise value pitch</p>
                                                                             </div>
                                                                         </div>
                                                                         <button
@@ -3051,7 +3045,7 @@ export default function DashboardPage() {
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => copyToClipboard(parsedBundle.email.subject, 'email_subj', 'Copied subject line to clipboard!')}
-                                                                                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer whitespace-nowrap ${
+                                                                                    className={`px-2 py-0.5 rounded text-xs font-medium transition cursor-pointer whitespace-nowrap ${
                                                                                         copiedSection === 'email_subj'
                                                                                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                                                                                             : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
@@ -3079,11 +3073,11 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     Meta & Paid Social Ad Creative
-                                                                                    <span className="text-[10px] text-blue-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-blue-400 font-mono font-normal">
                                                                                         Feed & Stories
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">Primary text, punchy ad headline, and meta description</p>
+                                                                                <p className="text-xs text-slate-400">Primary text, punchy ad headline, and meta description</p>
                                                                             </div>
                                                                         </div>
                                                                         <button
@@ -3115,11 +3109,11 @@ export default function DashboardPage() {
                                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
                                                                         <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5 md:col-span-3">
                                                                             <div className="flex items-center justify-between">
-                                                                                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Primary Text</span>
+                                                                                <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Primary Text</span>
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => copyToClipboard(parsedBundle.meta.primary, 'ad_primary', 'Copied ad primary text to clipboard!')}
-                                                                                    className={`text-[10px] transition cursor-pointer font-medium ${
+                                                                                    className={`text-xs transition cursor-pointer font-medium ${
                                                                                         copiedSection === 'ad_primary'
                                                                                             ? 'text-emerald-400'
                                                                                             : 'text-slate-400 hover:text-slate-200'
@@ -3134,11 +3128,11 @@ export default function DashboardPage() {
                                                                         </div>
                                                                         <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5 md:col-span-2">
                                                                             <div className="flex items-center justify-between">
-                                                                                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Headline</span>
+                                                                                <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Headline</span>
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => copyToClipboard(parsedBundle.meta.headline, 'ad_headline', 'Copied ad headline to clipboard!')}
-                                                                                    className={`text-[10px] transition cursor-pointer font-medium ${
+                                                                                    className={`text-xs transition cursor-pointer font-medium ${
                                                                                         copiedSection === 'ad_headline'
                                                                                             ? 'text-emerald-400'
                                                                                             : 'text-slate-400 hover:text-slate-200'
@@ -3153,11 +3147,11 @@ export default function DashboardPage() {
                                                                         </div>
                                                                         <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
                                                                             <div className="flex items-center justify-between">
-                                                                                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Description</span>
+                                                                                <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Description</span>
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => copyToClipboard(parsedBundle.meta.description, 'ad_desc', 'Copied ad description to clipboard!')}
-                                                                                    className={`text-[10px] transition cursor-pointer font-medium ${
+                                                                                    className={`text-xs transition cursor-pointer font-medium ${
                                                                                         copiedSection === 'ad_desc'
                                                                                             ? 'text-emerald-400'
                                                                                             : 'text-slate-400 hover:text-slate-200'
@@ -3185,11 +3179,11 @@ export default function DashboardPage() {
                                                                             <div>
                                                                                 <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                                                                                     Multimodal Visual Generation Prompt
-                                                                                    <span className="text-[10px] text-pink-400 font-mono font-normal">
+                                                                                    <span className="text-xs text-pink-400 font-mono font-normal">
                                                                                         Photorealistic Creative
                                                                                     </span>
                                                                                 </h3>
-                                                                                <p className="text-[10px] text-slate-400">Precision artistic directive fed to Image Generation Agent</p>
+                                                                                <p className="text-xs text-slate-400">Precision artistic directive fed to Image Generation Agent</p>
                                                                             </div>
                                                                         </div>
                                                                         <div className="flex items-center gap-2">
@@ -3226,7 +3220,7 @@ export default function DashboardPage() {
                                                                     </div>
 
                                                                     <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2">
-                                                                        <div className="flex items-center justify-between pb-1 text-[10px] text-slate-500 font-mono border-b border-slate-900">
+                                                                        <div className="flex items-center justify-between pb-1 text-xs text-slate-500 font-mono border-b border-slate-900">
                                                                             <span>CREATIVE DIRECTOR SPECIFICATION</span>
                                                                             <span className="text-pink-400/90 font-medium">FLUX.1 / Midjourney 8K Ready</span>
                                                                         </div>
@@ -3256,12 +3250,12 @@ export default function DashboardPage() {
                                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                                 <div>
                                                     <h3 className="text-xs font-bold text-white">Multimodal Campaign Visual</h3>
-                                                    <p className="text-[10px] text-slate-400">Generated by Image Generation Agent from your campaign directive.</p>
+                                                    <p className="text-xs text-slate-400">Generated by Image Generation Agent from your campaign directive.</p>
                                                 </div>
                                                 {generatedImageUrl && (
                                                     <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
                                                         <span
-                                                            className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full flex items-center gap-1.5 shrink-0 max-w-xs truncate"
+                                                            className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full flex items-center gap-1.5 shrink-0 max-w-xs truncate"
                                                             title={imageModelUsed ? `Model: ${imageModelUsed}` : 'AI Visual Ready'}
                                                         >
                                                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
@@ -3273,7 +3267,7 @@ export default function DashboardPage() {
                                                             )}
                                                         </span>
                                                         {clarityScore && (
-                                                            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm shrink-0">
+                                                            <span className="text-xs font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm shrink-0">
                                                                 <CheckCircle2 className="w-3 h-3 text-cyan-400 shrink-0" />
                                                                 <span>Clarity: {clarityScore} (Verified)</span>
                                                             </span>
@@ -3299,7 +3293,7 @@ export default function DashboardPage() {
                                                                 >
                                                                     {campaignTitle}
                                                                 </h3>
-                                                                <p className="text-[10px] text-slate-300 drop-shadow mt-0.5">1024 x 1024 • High Resolution Marketing Asset</p>
+                                                                <p className="text-xs text-slate-300 drop-shadow mt-0.5">1024 x 1024 • High Resolution Marketing Asset</p>
                                                             </div>
                                                             <a
                                                                 href={`${BACKEND_SERVER_URL}${generatedImageUrl}`}
@@ -3315,7 +3309,7 @@ export default function DashboardPage() {
                                                     </div>
                                                     {imageAttemptsLog && imageAttemptsLog.length > 0 && (
                                                         <div className="px-4 py-2.5 bg-slate-900/40 border-t border-slate-800/60 text-xs">
-                                                            <p className="text-[10px] font-mono text-slate-400 flex items-center gap-1.5">
+                                                            <p className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
                                                                 <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
                                                                 <span>Validation Audit: {imageAttemptsLog.join(' | ')}</span>
                                                             </p>
@@ -3323,16 +3317,16 @@ export default function DashboardPage() {
                                                     )}
                                                     {brandImagePrompt ? (
                                                         <div className="p-4 bg-slate-900/60 border-t border-slate-800/80 text-xs space-y-2">
-                                                            <p className="text-[11px] font-semibold text-indigo-400 flex items-center gap-1.5 font-mono">
+                                                            <p className="text-xs font-semibold text-indigo-400 flex items-center gap-1.5 font-mono">
                                                                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
                                                                 Brand-Derived Prompt (analyzed for marketing fidelity):
                                                             </p>
-                                                            <p className="text-slate-300 text-[11px] leading-relaxed whitespace-pre-line font-mono bg-slate-950/60 rounded-xl p-3 border border-slate-800">{brandImagePrompt}</p>
+                                                            <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-line font-mono bg-slate-950/60 rounded-xl p-3 border border-slate-800">{brandImagePrompt}</p>
                                                         </div>
                                                     ) : visualPrompt ? (
                                                         <div className="p-4 bg-slate-900/60 border-t border-slate-800/80 text-xs space-y-1.5">
-                                                            <p className="text-[11px] font-semibold text-indigo-400 font-mono">Creative Direction & Visual Prompt:</p>
-                                                            <p className="text-slate-300 text-[11px] leading-relaxed whitespace-pre-line">{visualPrompt}</p>
+                                                            <p className="text-xs font-semibold text-indigo-400 font-mono">Creative Direction & Visual Prompt:</p>
+                                                            <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-line">{visualPrompt}</p>
                                                         </div>
                                                     ) : null}
                                                 </div>
@@ -3340,7 +3334,7 @@ export default function DashboardPage() {
                                                 <div className="text-center py-16 bg-slate-950/60 border border-slate-800 rounded-2xl space-y-2">
                                                     <ImageIcon className="w-10 h-10 text-slate-600 mx-auto" />
                                                     <p className="text-xs font-medium text-slate-400">No campaign visual generated yet.</p>
-                                                    <p className="text-[11px] text-slate-600">Click "Launch 6-Agent Swarm" to generate copy and visuals automatically.</p>
+                                                    <p className="text-xs text-slate-600">Click "Launch 6-Agent Swarm" to generate copy and visuals automatically.</p>
                                                 </div>
                                             )}
                                         </div>
@@ -3349,7 +3343,7 @@ export default function DashboardPage() {
                                     {/* TAB 3: Terminal Stream */}
                                     {activeOutputTab === 'terminal' && (
                                         <div className="flex-1 flex flex-col bg-slate-950 border border-slate-800 rounded-2xl p-4 font-mono text-xs overflow-y-auto max-h-[560px] space-y-2">
-                                            <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-[11px] text-slate-500">
+                                            <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-xs text-slate-500">
                                                 <span>CrewAI Orchestrator Terminal Stream</span>
                                                 <span className="flex items-center gap-1.5 text-emerald-400">
                                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -3363,7 +3357,7 @@ export default function DashboardPage() {
                                                 </p>
                                             ) : (
                                                 executionLogs.map((log) => (
-                                                    <div key={log.id} className="flex items-start space-x-2 text-[11px]">
+                                                    <div key={log.id} className="flex items-start space-x-2 text-xs">
                                                         <span className="text-slate-600 shrink-0">[{log.time}]</span>
                                                         <span
                                                             className={`font-semibold shrink-0 ${
@@ -3396,7 +3390,7 @@ export default function DashboardPage() {
                                              {/* Scorecard Hero Banner */}
                                              <div className="p-5 bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950/60 border border-slate-800 rounded-2xl flex items-center justify-between shadow-xl">
                                                  <div>
-                                                     <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                                                     <div className="text-xs font-mono uppercase tracking-wider text-slate-400">
                                                          SurferSEO Content Optimization Scorecard
                                                      </div>
                                                      <div className="flex items-baseline gap-3 mt-1">
@@ -3407,12 +3401,12 @@ export default function DashboardPage() {
                                                              Grade: {seoData?.grade ?? 'A'}
                                                          </span>
                                                      </div>
-                                                     <p className="text-[11px] text-slate-400 mt-1">
+                                                     <p className="text-xs text-slate-400 mt-1">
                                                          {seoData?.verdict ?? 'Verified for optimal conversion & search indexability.'}
                                                      </p>
                                                  </div>
 
-                                                 <div className="text-right font-mono text-[11px] text-slate-400 space-y-1">
+                                                 <div className="text-right font-mono text-xs text-slate-400 space-y-1">
                                                      <div>Word Count: <span className="text-white font-bold">{seoData?.word_count ?? 680}</span></div>
                                                      <div>Grade Level: <span className="text-emerald-400">{seoData?.grade_level ?? 8.2}</span></div>
                                                      <div>Headers Ratio: <span className="text-cyan-400">{seoData?.header_count?.ratio_words_per_header ?? 240} w/h</span></div>
@@ -3421,27 +3415,27 @@ export default function DashboardPage() {
 
                                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                                  <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl">
-                                                     <p className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">
+                                                     <p className="text-xs text-slate-400 uppercase tracking-wider font-mono">
                                                          Flesch Reading Ease
                                                      </p>
                                                      <h4 className="text-lg font-bold text-emerald-400 mt-1">{seoData?.readability_score ?? 88} / 100</h4>
-                                                     <p className="text-[10px] text-slate-500 mt-0.5">Grade {seoData?.grade_level ?? 8.2} (Textstat Audit)</p>
+                                                     <p className="text-xs text-slate-500 mt-0.5">Grade {seoData?.grade_level ?? 8.2} (Textstat Audit)</p>
                                                  </div>
 
                                                  <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl">
-                                                     <p className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">
+                                                     <p className="text-xs text-slate-400 uppercase tracking-wider font-mono">
                                                          Search Intent
                                                      </p>
                                                      <h4 className="text-sm font-bold text-indigo-400 mt-1">{seoBrief?.search_intent ?? 'Informational & Commercial'}</h4>
-                                                     <p className="text-[10px] text-slate-500 mt-0.5">Target: {seoBrief?.target_word_count ?? 1200} words</p>
+                                                     <p className="text-xs text-slate-500 mt-0.5">Target: {seoBrief?.target_word_count ?? 1200} words</p>
                                                  </div>
 
                                                  <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl">
-                                                     <p className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">
+                                                     <p className="text-xs text-slate-400 uppercase tracking-wider font-mono">
                                                          LSI Coverage
                                                      </p>
                                                      <h4 className="text-lg font-bold text-cyan-400 mt-1">{seoData?.lsi_analysis?.coverage_pct ?? '85%'}</h4>
-                                                     <p className="text-[10px] text-slate-500 mt-0.5">{seoData?.lsi_analysis?.matched?.length ?? 6} LSI terms matched</p>
+                                                     <p className="text-xs text-slate-500 mt-0.5">{seoData?.lsi_analysis?.matched?.length ?? 6} LSI terms matched</p>
                                                  </div>
                                              </div>
 
@@ -3478,10 +3472,10 @@ export default function DashboardPage() {
                                                          <div key={i} className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded-xl text-xs">
                                                              <span className="font-mono text-slate-300">{kw.keyword}</span>
                                                              <div className="flex items-center space-x-3">
-                                                                 <span className="text-[11px] text-slate-400">
+                                                                 <span className="text-xs text-slate-400">
                                                                      {typeof kw.count === 'number' ? `${kw.count} mentions` : kw.count}
                                                                  </span>
-                                                                 <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                                                                 <span className="px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
                                                                      {kw.density}
                                                                  </span>
                                                              </div>
@@ -3501,9 +3495,9 @@ export default function DashboardPage() {
                                                              <div key={i} className="p-2.5 bg-slate-900/60 rounded-xl text-xs flex items-center justify-between">
                                                                  <div>
                                                                      <span className="text-slate-200 font-medium">"{link.anchor}"</span>
-                                                                     <span className="text-[10px] text-slate-500 ml-2 font-mono">{link.target}</span>
+                                                                     <span className="text-xs text-slate-500 ml-2 font-mono">{link.target}</span>
                                                                  </div>
-                                                                 <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 font-mono">
+                                                                 <span className="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 font-mono">
                                                                      {link.type}
                                                                  </span>
                                                              </div>
@@ -3536,7 +3530,7 @@ export default function DashboardPage() {
                                         </div>
                                         <div>
                                             <h3 className="text-sm font-bold text-white">Social Publisher: Omnichannel Broadcast</h3>
-                                            <p className="text-[11px] text-slate-400">Deploy campaign copy and visual assets across any social network or custom webhook.</p>
+                                            <p className="text-xs text-slate-400">Deploy campaign copy and visual assets across any social network or custom webhook.</p>
                                         </div>
                                     </div>
                                     <button
@@ -3558,7 +3552,7 @@ export default function DashboardPage() {
                                         </p>
                                         <div className="flex flex-wrap justify-center gap-2 pt-2">
                                             {publishedChannels.map((ch) => (
-                                                <span key={ch} className="px-2.5 py-1 rounded-xl text-[10px] font-mono capitalize bg-slate-950 border border-emerald-500/30 text-emerald-300">
+                                                <span key={ch} className="px-2.5 py-1 rounded-xl text-xs font-mono capitalize bg-slate-950 border border-emerald-500/30 text-emerald-300">
                                                     ✓ {ch}
                                                 </span>
                                             ))}
@@ -3575,20 +3569,20 @@ export default function DashboardPage() {
                                                     className="w-16 h-12 object-cover rounded-xl border border-slate-700/60 shadow flex-shrink-0"
                                                 />
                                             ) : (
-                                                <div className="w-16 h-12 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-center text-slate-600 text-[10px] flex-shrink-0">
+                                                <div className="w-16 h-12 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-center text-slate-600 text-xs flex-shrink-0">
                                                     No Image
                                                 </div>
                                             )}
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between gap-2">
-                                                    <span className="text-[11px] font-semibold text-white truncate">
+                                                    <span className="text-xs font-semibold text-white truncate">
                                                         {campaignGoal || 'Campaign Copy'}
                                                     </span>
-                                                    <span className="text-[10px] text-emerald-400 font-mono flex-shrink-0 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                                    <span className="text-xs text-emerald-400 font-mono flex-shrink-0 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                                                         {(generatedOutput || '').length} chars
                                                     </span>
                                                 </div>
-                                                <p className="text-[10px] text-slate-400 truncate mt-1 font-mono">
+                                                <p className="text-xs text-slate-400 truncate mt-1 font-mono">
                                                     {generatedOutput ? generatedOutput.replace(/[\n#*]/g, ' ').slice(0, 90) + '...' : 'Generated AI copy ready for distribution.'}
                                                 </p>
                                             </div>
@@ -3610,7 +3604,7 @@ export default function DashboardPage() {
                                                         key={cat.id}
                                                         type="button"
                                                         onClick={() => setSelectedCategory(cat.id)}
-                                                        className={`px-2.5 py-1 rounded-xl text-[11px] font-medium transition cursor-pointer ${
+                                                        className={`px-2.5 py-1 rounded-xl text-xs font-medium transition cursor-pointer ${
                                                             selectedCategory === cat.id
                                                                 ? 'bg-indigo-600 text-white'
                                                                 : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
@@ -3621,7 +3615,7 @@ export default function DashboardPage() {
                                                 ))}
                                             </div>
 
-                                            <div className="flex items-center gap-2 text-[11px]">
+                                            <div className="flex items-center gap-2 text-xs">
                                                 <button
                                                     type="button"
                                                     onClick={() => toggleAllChannels(true)}
@@ -3664,7 +3658,7 @@ export default function DashboardPage() {
                                                                 <p className="font-semibold text-slate-200 text-xs truncate">
                                                                     {platform.name}
                                                                 </p>
-                                                                <p className="text-[10px] text-slate-500 truncate">
+                                                                <p className="text-xs text-slate-500 truncate">
                                                                     {platform.type} • <span className="text-slate-400">{platform.limit}</span>
                                                                 </p>
                                                             </div>
@@ -3672,7 +3666,7 @@ export default function DashboardPage() {
 
                                                         <div className="flex items-center space-x-2 shrink-0">
                                                             {isBeingPublished && (
-                                                                <span className="text-[10px] text-emerald-400 animate-pulse font-mono">
+                                                                <span className="text-xs text-emerald-400 animate-pulse font-mono">
                                                                     ✓ Dispatched
                                                                 </span>
                                                             )}
@@ -3698,11 +3692,11 @@ export default function DashboardPage() {
                                                 {/* Webhook URL Input */}
                                                 <div className="p-3 bg-slate-950 border border-emerald-500/30 rounded-2xl space-y-2">
                                                     <div className="flex justify-between items-center">
-                                                        <label className="text-[11px] font-semibold text-emerald-400 flex items-center gap-1.5">
+                                                        <label className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
                                                             <Webhook className="w-3.5 h-3.5" />
                                                             Webhook Destination URL
                                                         </label>
-                                                        <span className="text-[10px] text-slate-500">Paste your Zapier / Buffer / Make URL below</span>
+                                                        <span className="text-xs text-slate-500">Paste your Zapier / Buffer / Make URL below</span>
                                                     </div>
                                                     <input
                                                         type="url"
@@ -3712,7 +3706,7 @@ export default function DashboardPage() {
                                                         className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-emerald-500 transition"
                                                     />
                                                     {webhookUrl && webhookUrl.startsWith('http') && (
-                                                        <p className="text-[10px] text-emerald-400 flex items-center gap-1">
+                                                        <p className="text-xs text-emerald-400 flex items-center gap-1">
                                                             <CheckCircle2 className="w-3 h-3" /> Valid URL detected — ready to dispatch
                                                         </p>
                                                     )}
@@ -3720,15 +3714,15 @@ export default function DashboardPage() {
 
                                                 {/* Zapier / Buffer / Make Setup Guide */}
                                                 <div className="p-3.5 bg-indigo-950/40 border border-indigo-500/20 rounded-2xl space-y-3">
-                                                    <p className="text-[11px] font-bold text-indigo-300 flex items-center gap-1.5">
+                                                    <p className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
                                                         <Zap className="w-3.5 h-3.5 text-amber-400" />
                                                         How to get your webhook URL (5-min setup, free)
                                                     </p>
 
                                                     {/* Option 1: Zapier */}
                                                     <div className="space-y-1.5">
-                                                        <p className="text-[11px] font-semibold text-amber-400">Option 1 — Zapier (Recommended)</p>
-                                                        <ol className="text-[10px] text-slate-400 space-y-1 pl-3 list-decimal">
+                                                        <p className="text-xs font-semibold text-amber-400">Option 1 — Zapier (Recommended)</p>
+                                                        <ol className="text-xs text-slate-400 space-y-1 pl-3 list-decimal">
                                                             <li>Go to <a href="https://zapier.com/app/zaps" target="_blank" rel="noopener noreferrer" className="text-amber-400 underline hover:text-amber-300">zapier.com/app/zaps</a> → Create Zap</li>
                                                             <li>Trigger: <span className="text-slate-200">"Webhooks by Zapier" → "Catch Hook"</span></li>
                                                             <li>Copy the webhook URL → paste above</li>
@@ -3741,8 +3735,8 @@ export default function DashboardPage() {
 
                                                     {/* Option 2: Buffer */}
                                                     <div className="space-y-1.5">
-                                                        <p className="text-[11px] font-semibold text-sky-400">Option 2 — Buffer via Zapier</p>
-                                                        <ol className="text-[10px] text-slate-400 space-y-1 pl-3 list-decimal">
+                                                        <p className="text-xs font-semibold text-sky-400">Option 2 — Buffer via Zapier</p>
+                                                        <ol className="text-xs text-slate-400 space-y-1 pl-3 list-decimal">
                                                             <li>Connect your LinkedIn/Twitter/Instagram to <a href="https://buffer.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 underline hover:text-sky-300">buffer.com</a></li>
                                                             <li>In Zapier: Action = <span className="text-slate-200">"Buffer" → "Create Update"</span></li>
                                                             <li>Map <code className="text-emerald-400">content</code> → Text, <code className="text-emerald-400">media_url</code> → Photo URL</li>
@@ -3754,8 +3748,8 @@ export default function DashboardPage() {
 
                                                     {/* Option 3: Make */}
                                                     <div className="space-y-1.5">
-                                                        <p className="text-[11px] font-semibold text-violet-400">Option 3 — Make.com (formerly Integromat)</p>
-                                                        <ol className="text-[10px] text-slate-400 space-y-1 pl-3 list-decimal">
+                                                        <p className="text-xs font-semibold text-violet-400">Option 3 — Make.com (formerly Integromat)</p>
+                                                        <ol className="text-xs text-slate-400 space-y-1 pl-3 list-decimal">
                                                             <li>Go to <a href="https://make.com" target="_blank" rel="noopener noreferrer" className="text-violet-400 underline hover:text-violet-300">make.com</a> → Create Scenario</li>
                                                             <li>Add module: <span className="text-slate-200">Webhooks → Custom webhook</span> → Copy URL above</li>
                                                             <li>Add LinkedIn / Twitter / Facebook module → map <code className="text-emerald-400">content</code></li>
@@ -3767,8 +3761,8 @@ export default function DashboardPage() {
 
                                                     {/* Payload preview */}
                                                     <div className="space-y-1">
-                                                        <p className="text-[10px] font-semibold text-slate-400">📦 What we send to your webhook:</p>
-                                                        <pre className="text-[10px] text-emerald-300 bg-slate-950 rounded-xl p-2.5 overflow-x-auto font-mono">{`{
+                                                        <p className="text-xs font-semibold text-slate-400">📦 What we send to your webhook:</p>
+                                                        <pre className="text-xs text-emerald-300 bg-slate-950 rounded-xl p-2.5 overflow-x-auto font-mono">{`{
   "dispatch_id": "disp_abc123",
   "timestamp": "2026-09-24T...",
   "content": "[your clean campaign copy]",
@@ -3782,7 +3776,7 @@ export default function DashboardPage() {
 
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                                             <div>
-                                                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                                                <label className="block text-xs font-medium text-slate-400 mb-1">
                                                     Schedule Broadcast (Blank for Instant)
                                                 </label>
                                                 <input
@@ -3875,15 +3869,15 @@ export default function DashboardPage() {
                                                             {item.title}
                                                         </span>
                                                         {item.seo_score && (
-                                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                            <span className="px-2 py-0.5 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                                                                 SEO: {item.seo_score}%
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <p className="text-[11px] text-slate-400 truncate">
+                                                    <p className="text-xs text-slate-400 truncate">
                                                         Audience: {item.audience} • {item.tone}
                                                     </p>
-                                                    <p className="text-[10px] text-slate-500 mt-1 font-mono">
+                                                    <p className="text-xs text-slate-500 mt-1 font-mono">
                                                         {item.completed_at ? new Date(item.completed_at).toLocaleString() : 'Saved Archive'}
                                                     </p>
                                                 </div>

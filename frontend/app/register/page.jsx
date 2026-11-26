@@ -213,7 +213,7 @@ function RegisterContent() {
                             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                             <div className="flex-1">
                                 <p className="font-semibold">Registration Notice</p>
-                                <p className="text-[11px] text-rose-300/90 mt-0.5">{error}</p>
+                                <p className="text-xs text-rose-300/90 mt-0.5">{error}</p>
                             </div>
                         </motion.div>
                     )}
@@ -259,7 +259,7 @@ function RegisterContent() {
                 {/* Divider */}
                 <div className="relative my-4 flex items-center justify-center">
                     <div className="border-t border-slate-800 w-full" />
-                    <span className="bg-slate-900/90 px-3 text-[11px] font-mono uppercase tracking-wider text-slate-500 absolute">
+                    <span className="bg-slate-900/90 px-3 text-xs font-mono uppercase tracking-wider text-slate-500 absolute">
                         Or register with email
                     </span>
                 </div>
@@ -370,7 +370,7 @@ function RegisterContent() {
                     </div>
 
                     <div className="pt-1">
-                        <label className="flex items-start gap-2 cursor-pointer select-none text-[11px] text-slate-400">
+                        <label className="flex items-start gap-2 cursor-pointer select-none text-xs text-slate-400">
                             <input
                                 type="checkbox"
                                 checked={agreeTerms}
