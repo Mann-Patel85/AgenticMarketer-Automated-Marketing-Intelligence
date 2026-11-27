@@ -129,10 +129,15 @@ function parseMarketingBundle(rawText) {
         return s.trim();
     };
 
-    // 1. Campaign Title
-    const titleMatch = rawText.match(/^\s*#+\s*(?:B2B[^\n]+|[^\n]+)/i);
-    let campaignTitle = titleMatch ? strip(titleMatch[0]) : 'B2B Marketing Campaign Intelligence';
-    campaignTitle = campaignTitle.replace(/^\d+[\.\:\-]\s*/, '').trim();
+    // 1. Campaign Title: prefer the copy's own headline; fall back to the first heading only if it isn't a
+    //    generic section name (the page then falls back to the campaign goal)
+    const headlineMatch = rawText.match(/\*{0,2}Headline\*{0,2}\s*[:-]\s*\*{0,2}\s*([^\n]+)/i);
+    const titleMatch = rawText.match(/^\s*#+\s*([^\n]+)/);
+    let campaignTitle = headlineMatch ? strip(headlineMatch[1]) : (titleMatch ? strip(titleMatch[1]) : '');
+    campaignTitle = campaignTitle.replace(/^\d+[\.\:\-]\s*/, '').replace(/\*+/g, '').trim();
+    if (/universal master copy|hook|headline variations|linkedin|thread|blog|cold email|visual generation/i.test(campaignTitle)) {
+        campaignTitle = '';
+    }
 
     // 2. Chunks by headers (handles ###, ##, numbered headers like 1. ###, and variants)
     const chunks = rawText.split(/\n+(?:(?:\d+[\.\)]\s*)?\#{2,4}\s*|\#{2,4}\s*(?:\d+[\.\)]\s*)?)/);
@@ -2388,7 +2393,7 @@ export default function DashboardPage() {
                                                                             </span>
                                                                         </div>
                                                                         <h2 className="text-sm font-bold text-white tracking-tight leading-snug">
-                                                                            {parsedBundle?.title || 'B2B Marketing Campaign Intelligence'}
+                                                                            {campaignTitle}
                                                                         </h2>
                                                                         <p className="text-xs text-slate-400">
                                                                             Calibrated for <span className="text-slate-200 font-medium">{targetAudience}</span> · <span className="text-indigo-300 font-medium">{tone}</span>
@@ -3332,7 +3337,7 @@ export default function DashboardPage() {
                                                         {clarityScore && (
                                                             <span className="text-xs font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm shrink-0">
                                                                 <CheckCircle2 className="w-3 h-3 text-cyan-400 shrink-0" />
-                                                                <span>Clarity: {clarityScore} (Verified)</span>
+                                                                <span>Sharpness: {clarityScore}</span>
                                                             </span>
                                                         )}
                                                     </div>
@@ -3374,7 +3379,7 @@ export default function DashboardPage() {
                                                         <div className="px-4 py-2.5 bg-slate-900/40 border-t border-slate-800/60 text-xs">
                                                             <p className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
                                                                 <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                                                                <span>Validation Audit: {imageAttemptsLog.join(' | ')}</span>
+                                                                <span>Quality check: {imageAttemptsLog.join(' | ')}</span>
                                                             </p>
                                                         </div>
                                                     )}
@@ -3382,7 +3387,7 @@ export default function DashboardPage() {
                                                         <div className="p-4 bg-slate-900/60 border-t border-slate-800/80 text-xs space-y-2">
                                                             <p className="text-xs font-semibold text-indigo-400 flex items-center gap-1.5 font-mono">
                                                                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                                                                Brand-Derived Prompt (analyzed for marketing fidelity):
+                                                                Image prompt used:
                                                             </p>
                                                             <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-line font-mono bg-slate-950/60 rounded-xl p-3 border border-slate-800">{brandImagePrompt}</p>
                                                         </div>
@@ -3575,7 +3580,7 @@ export default function DashboardPage() {
                                              <div className="p-5 bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950/60 border border-slate-800 rounded-2xl flex items-center justify-between shadow-xl">
                                                  <div>
                                                      <div className="text-xs font-mono uppercase tracking-wider text-slate-400">
-                                                         SurferSEO Content Optimization Scorecard
+                                                         Content Optimization Scorecard
                                                      </div>
                                                      <div className="flex items-baseline gap-3 mt-1">
                                                          <span className="text-3xl font-black text-emerald-400 font-mono">
@@ -3628,7 +3633,7 @@ export default function DashboardPage() {
                                                  <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-2.5">
                                                      <h4 className="text-xs font-semibold text-slate-300 font-mono uppercase tracking-wider flex items-center gap-2">
                                                          <Search className="w-3.5 h-3.5 text-violet-400" />
-                                                         Automated SERP Brief & "People Also Ask" Prompts
+                                                         Suggested Questions to Answer
                                                      </h4>
                                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                                                          {seoBrief.people_also_ask?.map((q, i) => (
@@ -3672,14 +3677,14 @@ export default function DashboardPage() {
                                              {seoData?.link_suggestions && (
                                                  <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-2">
                                                      <h4 className="text-xs font-semibold text-slate-300 font-mono uppercase tracking-wider">
-                                                         Contextual Link Placement Audit
+                                                         Suggested Link Placement
                                                      </h4>
                                                      <div className="space-y-1.5">
                                                          {seoData.link_suggestions.map((link, i) => (
                                                              <div key={i} className="p-2.5 bg-slate-900/60 rounded-xl text-xs flex items-center justify-between">
                                                                  <div>
                                                                      <span className="text-slate-200 font-medium">"{link.anchor}"</span>
-                                                                     <span className="text-xs text-slate-500 ml-2 font-mono">{link.target}</span>
+                                                                     <span className="text-xs text-slate-500 ml-2">{link.target}</span>
                                                                  </div>
                                                                  <span className="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 font-mono">
                                                                      {link.type}

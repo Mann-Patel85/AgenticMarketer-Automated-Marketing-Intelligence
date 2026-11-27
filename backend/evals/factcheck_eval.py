@@ -317,6 +317,10 @@ async def run_part_b(out_dir: Path, pace: float, limit: int) -> list:
         swapped = {"n": 0}
 
         async def legacy_call(prompt, **kw):
+            # Newer prompt additions that the old pipeline didn't have
+            prompt = re.sub(r"TODAY'S DATE: [^\n]*\n", "", prompt)
+            prompt = re.sub(r"\n1b\. ALSO NEVER INVENT:[^\n]*", "", prompt)
+            prompt = re.sub(r"\n1c\. PRODUCT FACTS vs MARKET CONTEXT:[^\n]*", "", prompt)
             for new, old in LEGACY_SWAPS:
                 if new in prompt:
                     prompt = prompt.replace(new, old)
