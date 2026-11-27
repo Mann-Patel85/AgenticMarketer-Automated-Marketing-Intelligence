@@ -3412,10 +3412,10 @@ export default function DashboardPage() {
                                     {activeOutputTab === 'terminal' && (
                                         <div className="flex-1 flex flex-col bg-slate-950 border border-slate-800 rounded-2xl p-4 font-mono text-xs overflow-y-auto max-h-[560px] space-y-2">
                                             <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-xs text-slate-500">
-                                                <span>CrewAI Orchestrator Terminal Stream</span>
-                                                <span className="flex items-center gap-1.5 text-emerald-400">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                                    WebSocket: Online
+                                                <span>Agent Activity Log</span>
+                                                <span className={`flex items-center gap-1.5 ${isExecuting ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${isExecuting ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                                                    {isExecuting ? 'Running' : executionLogs.length ? 'Finished' : 'Idle'}
                                                 </span>
                                             </div>
 
@@ -3541,6 +3541,7 @@ export default function DashboardPage() {
                                                                          </p>
                                                                      )}
                                                                      {c.verdict !== 'corrected' && c.correction && <p className="text-xs text-slate-400 mt-1">Correct fact: {c.correction}</p>}
+                                                                     {c.note && <p className="text-xs text-amber-300/90 mt-1">{c.note}</p>}
                                                                      {c.sources?.length > 0 && (
                                                                          <p className="text-xs text-slate-500 mt-1">Source: {c.sources.join(', ')}</p>
                                                                      )}
